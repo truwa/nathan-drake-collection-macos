@@ -17,9 +17,6 @@ typedef struct {
 } Segment;
 
 typedef void *(*LowMap)(size_t size, int protection);
-typedef LPVOID (WINAPI *VirtualAlloc2Fn)(
-    HANDLE process, PVOID base, SIZE_T size, ULONG type, ULONG protect,
-    void *extended, ULONG count);
 
 static int is_tcb_load(const unsigned char *at) {
     return *(const uint64_t *)at == UINT64_C(0x25048b4865) && at[8] == 0;
@@ -54,26 +51,34 @@ static void claim_slot(void) {
  * within 2 GB of the rewritten instruction. The low-map cursor lives far
  * below the macOS guard and cannot reach the guest with a 32-bit jump.
  */
+static int in_jump_range(uintptr_t from, uintptr_t to) {
+    intptr_t delta = (intptr_t)(to - from);
+    return delta > INT32_MIN + 0x100000 && delta < INT32_MAX - 0x100000;
+}
+
 static unsigned char *nearby_stubs(unsigned char *image, const Segment *segments,
                                    uint64_t count, size_t bytes) {
-    uint64_t span = 0;
+    uintptr_t low = UINTPTR_MAX;
+    uintptr_t high = 0;
     for (uint64_t s = 0; s < count; ++s) {
-        uint64_t end = segments[s].address + segments[s].size;
-        if (end > span) span = end;
+        if (!(segments[s].flags & 1) || segments[s].size < 9) continue;
+        uintptr_t start = (uintptr_t)image + segments[s].address;
+        uintptr_t end = start + segments[s].size;
+        if (start < low) low = start;
+        if (end > high) high = end;
     }
-    uintptr_t base = ((uintptr_t)image + span + 0xFFFF) & ~(uintptr_t)0xFFFF;
-    if (base < (uintptr_t)image || base - (uintptr_t)image > 0x70000000) return NULL;
+    if (!high) return NULL;
 
-    unsigned char *stubs = VirtualAlloc((void *)base, bytes, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    uintptr_t base = (high + 0xFFFF) & ~(uintptr_t)0xFFFF;
+    unsigned char *stubs = VirtualAlloc((void *)base, bytes, MEM_RESERVE | MEM_COMMIT,
+                                         PAGE_EXECUTE_READWRITE);
     if (stubs) return stubs;
 
-    if (!VirtualFree((void *)base, bytes, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)) return NULL;
-    HMODULE kernel = GetModuleHandleW(L"kernelbase.dll");
-    VirtualAlloc2Fn alloc2 = kernel ? (VirtualAlloc2Fn)GetProcAddress(kernel, "VirtualAlloc2") : NULL;
-    if (!alloc2) return NULL;
-    return alloc2(GetCurrentProcess(), (void *)base, bytes,
-                  MEM_RESERVE | MEM_COMMIT | MEM_REPLACE_PLACEHOLDER,
-                  PAGE_EXECUTE_READWRITE, NULL, 0);
+    stubs = VirtualAlloc(NULL, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    if (stubs && in_jump_range(low, (uintptr_t)stubs) && in_jump_range(high, (uintptr_t)stubs))
+        return stubs;
+    if (stubs) VirtualFree(stubs, 0, MEM_RELEASE);
+    return NULL;
 }
 
 __declspec(dllexport) uint64_t patch_guest_tls(

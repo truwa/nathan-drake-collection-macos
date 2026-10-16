@@ -56,10 +56,106 @@ def patch(source: Path, destination: Path) -> None:
             raise ValueError(f"{label} does not match this bb-probe.exe ({found.hex()})")
         data[offset:offset + 8] = struct.pack("<Q", new)
     _hook_tls(data)
+    _enlarge_record_chunks(data)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_bytes(data)
     temporary.replace(destination)
+
+
+def _enlarge_record_chunks(data: bytearray) -> None:
+    """One recorded GPU command during combat exceeds the 128 KB chunk.
+
+    Commands live in the first 0x20000 bytes. The cursor and two neighboring
+    qwords follow, and the allocation is 0x20040. ReserveRecordData aborts
+    when one reservation cannot fit. The data area becomes 4 MB and those
+    three qwords move with it.
+    """
+    old_cap, new_cap = 0x20000, 0x400000
+    delta = new_cap - old_cap
+    text_start, text_end = 0x400, 0x400 + 0x53A600
+    text = bytes(data[text_start:text_end])
+    changed = 0
+    cursors = []
+
+    def rewrite(at, new):
+        nonlocal changed
+        data[at:at + 4] = struct.pack("<I", new)
+        changed += 1
+
+    for field in (0x20000, 0x20008, 0x20010):
+        raw = struct.pack("<I", field)
+        index = 0
+        while True:
+            found = text.find(raw, index)
+            if found < 0:
+                break
+            index = found + 1
+            at = text_start + found
+            if not _is_chunk_field(data, at):
+                continue
+            if field == old_cap:
+                cursors.append(at)
+            rewrite(at, field + delta)
+
+    index = 0
+    cap = struct.pack("<I", old_cap)
+    while True:
+        found = text.find(cap, index)
+        if found < 0:
+            break
+        index = found + 1
+        at = text_start + found
+        near_cursor = any(at - 32 <= cursor < at for cursor in cursors)
+        if near_cursor and _is_capacity_compare(data, at):
+            rewrite(at, new_cap)
+        elif data[at - 2:at] == b"\x41\xb8" and data[at + 4:at + 7] == b"\x4c\x2b\x80":
+            rewrite(at, new_cap)
+
+    allocs = 0
+    alloc = struct.pack("<I", 0x20040)
+    index = 0
+    while True:
+        found = text.find(alloc, index)
+        if found < 0:
+            break
+        index = found + 1
+        at = text_start + found
+        if data[at - 1] in range(0xB8, 0xC0) or data[at - 2:at] == b"\x41\xb8":
+            rewrite(at, 0x400040)
+            allocs += 1
+    limit_at = text.find(struct.pack("<I", 0x20001))
+    if limit_at < 0 or data[text_start + limit_at - 3:text_start + limit_at] != b"\x48\x81\xfa":
+        raise ValueError("record chunk limit was not the expected compare")
+    rewrite(text_start + limit_at, 0x400001)
+    if len(cursors) < 50 or allocs != 12:
+        raise ValueError(f"record chunk patch saw {len(cursors)} cursors and {allocs} allocations")
+
+
+def _is_chunk_field(data: bytearray, at: int) -> bool:
+    opcodes = {0x8B, 0x89, 0x2B, 0x81, 0x83, 0xC7, 0x03, 0x01, 0x29, 0x39}
+    rex, opcode, modrm = data[at - 3], data[at - 2], data[at - 1]
+    if rex in range(0x40, 0x50) and opcode in opcodes and modrm >> 6 == 2 and (modrm & 7) != 4:
+        if (modrm & 7) == 5 and (rex & 1) == 0:
+            return False
+        return True
+    rex, opcode, modrm, sib = data[at - 4], data[at - 3], data[at - 2], data[at - 1]
+    if rex in range(0x40, 0x50) and opcode in opcodes and modrm >> 6 == 2 and (modrm & 7) == 4:
+        base = sib & 7
+        if base == 4 and (rex & 1) == 0:
+            return False
+        if base == 5 and (rex & 1) == 0:
+            return False
+        return True
+    # movaps [r13+cursor], xmm — the recorder clears the cursor this way.
+    return data[at - 4:at] == b"\x41\x0f\x29\xb5"
+
+
+def _is_capacity_compare(data: bytearray, at: int) -> bool:
+    rex, opcode, modrm = data[at - 3], data[at - 2], data[at - 1]
+    if rex in range(0x40, 0x50) and opcode == 0x81 and modrm >> 6 == 3 and (modrm >> 3) & 7 == 7:
+        return True
+    return data[at - 2:at] == b"\x48\x3d"
 
 
 def _hook_tls(data: bytearray) -> None:
