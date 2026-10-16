@@ -1,0 +1,4 @@
+*.dll
+*.exe
+*.tmp
+__pycache__/

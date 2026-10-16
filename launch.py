@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Start the Uncharted Windows port with the MyVulkan Sikarugir wrapper.
+
+That wrapper already loads KosmicKrisp. Game files stay where they are.
+"""
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+import patch_probe
+
+ROOT = Path(__file__).resolve().parent
+DEFAULT_PORT = Path("/Volumes/S990PRO/uncharted-windows")
+SUPPORT = Path.home() / "Library/Application Support/Uncharted MacOS"
+DLL_NAME = "uncharted-crossover-tls.dll"
+WRAPPER = Path("/Volumes/S990PRO/Sikarugir/MyVulkan.app")
+
+
+def windows_path(path: Path) -> str:
+    return "Z:" + str(path.resolve()).replace("/", "\\")
+
+
+def write_wrapper_bat(port: Path, game: Path, exe: str, probe: Path) -> Path:
+    drive = WRAPPER / "Contents/SharedSupport/prefix/drive_c"
+    if not drive.is_dir():
+        raise FileNotFoundError(f"No Wine prefix in {WRAPPER}")
+    bat = drive / "uncharted-launch.bat"
+    lines = [
+        "@echo off",
+        f"set BB_PROBE={windows_path(probe)}",
+        f"set BB_GAME_DIR={windows_path(game)}",
+        f"set BB_EXE={exe}",
+        f"set BB_DATA_DIR={windows_path(port)}",
+        f"set BB_USER_DIR={windows_path(port / 'user')}",
+        f"set BB_CONFIG={windows_path(port / 'bbport.ini')}",
+        f"set BB_INPUT_CONFIG={windows_path(port / 'input.ini')}",
+        f"\"{windows_path(port / 'Uncharted.exe')}\" --run",
+    ]
+    bat.write_bytes(("\r\n".join(lines) + "\r\n").encode("ascii"))
+    return bat
+
+
+def build_tls_dll(destination: Path) -> None:
+    compiler = shutil.which("x86_64-w64-mingw32-gcc")
+    if not compiler:
+        raise FileNotFoundError("x86_64-w64-mingw32-gcc is not installed")
+    source = ROOT / "tls_adapter.c"
+    subprocess.run(
+        [compiler, "-shared", "-nostdlib", "-O2", str(source),
+         "-lkernel32", "-Wl,--entry,DllMain", "-o", str(destination)],
+        check=True)
+
+
+def launch(port: Path, game: Path, exe: str) -> int:
+    if not WRAPPER.is_dir():
+        raise FileNotFoundError(WRAPPER)
+    if not (port / "Uncharted.exe").is_file():
+        raise FileNotFoundError(f"No Uncharted.exe in {port}")
+    if not (game / "eboot.bin").is_file():
+        raise FileNotFoundError(f"No eboot.bin in {game}")
+    probe = port / "bin/bb-probe.exe"
+    if not probe.is_file():
+        raise FileNotFoundError(probe)
+
+    dll = port / "bin" / DLL_NAME
+    source_dll = ROOT / DLL_NAME
+    if not source_dll.is_file() or source_dll.stat().st_mtime < (ROOT / "tls_adapter.c").stat().st_mtime:
+        build_tls_dll(source_dll)
+    if not dll.is_file() or dll.read_bytes() != source_dll.read_bytes():
+        shutil.copy2(source_dll, dll)
+
+    patched = port / "bin/bb-probe-macos.exe"
+    patch_probe.patch(probe, patched)
+    write_wrapper_bat(port, game, exe, patched)
+    plist = WRAPPER / "Contents/Info.plist"
+    subprocess.run(
+        ["plutil", "-replace", "Program Name and Path", "-string", "/uncharted-launch.bat", str(plist)],
+        check=True)
+    wine = WRAPPER / "Contents/SharedSupport/wine/bin/wineserver"
+    environment = os.environ.copy()
+    environment["WINEPREFIX"] = str(WRAPPER / "Contents/SharedSupport/prefix")
+    environment["DYLD_FALLBACK_LIBRARY_PATH"] = str(WRAPPER / "Contents/Frameworks")
+    subprocess.run([str(wine), "-k"], env=environment, check=False)
+    print(f"Wrapper: {WRAPPER}")
+    print(f"Game: {game} ({exe})")
+    print("Log:  Contents/SharedSupport/Logs/LastRunWine.log inside the wrapper")
+    subprocess.run(["open", "-W", str(WRAPPER)], check=True)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=Path, default=DEFAULT_PORT,
+                        help="Folder containing Uncharted.exe and the game dump")
+    parser.add_argument("--game", type=Path, default=None,
+                        help="Game folder with eboot.bin (default: <port>/CUSA02343)")
+    parser.add_argument("--exe", default="u1", choices=("u1", "u2", "u3"),
+                        help="Which game to start: u1 Drake's Fortune, u2 Among Thieves, u3 Drake's Deception")
+    args = parser.parse_args()
+    port = args.port.expanduser().resolve()
+    game = (args.game.expanduser().resolve() if args.game else port / "CUSA02343")
+    try:
+        return launch(port, game, args.exe)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"Cannot launch: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
