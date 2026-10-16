@@ -128,6 +128,7 @@ def write_wrapper_bat(port: Path, game: Path, exe: str, probe: Path) -> Path:
     bat = drive / "uncharted-launch.bat"
     lines = [
         "@echo off",
+        "echo bat-start > C:\\uncharted-out.txt",
         f"set BB_PROBE={windows_path(probe)}",
         f"set BB_GAME_DIR={windows_path(game)}",
         f"set BB_EXE={guest}",
@@ -138,9 +139,8 @@ def write_wrapper_bat(port: Path, game: Path, exe: str, probe: Path) -> Path:
         f"set BB_INPUT_CONFIG={windows_path(port / 'input.ini')}",
         f"set BB_LOADEXEC_FILE={windows_path(port / 'out' / 'loadexec.txt')}",
         "set BB_VBLANK_HZ=60",
-        # A multi-megabyte scalar copy otherwise flushes an image back to its
-        # buffer first. On this Vulkan stack that flush is the chapter hitch.
-        "set BB_DEPTH_COPY_SYNC=0",
+        # Leave depth copies synced. Skipping that wait removed the chapter
+        # hitch, and it also left depth of field focused on the wrong plane.
         "set BB_VELOCITY_PS=f4b18264",
         "set BB_UPSCALE_BEFORE_CS=aec539f0",
         "set BB_HUDLESS_PS=484cdbf5",
