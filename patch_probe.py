@@ -57,6 +57,7 @@ def patch(source: Path, destination: Path) -> None:
         data[offset:offset + 8] = struct.pack("<Q", new)
     _hook_tls(data)
     _enlarge_record_chunks(data)
+    _translate_menu(data)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_bytes(data)
@@ -244,6 +245,133 @@ def _hook_tls(data: bytearray) -> None:
     data.extend(bytes(raw_offset - len(data)))
     data.extend(section)
     data.extend(bytes(raw_size - len(section)))
+
+
+# The settings overlay in this port is compiled in Russian. Each replacement
+# is a C string, so the English text has to fit in the original bytes.
+MENU_ENGLISH = (
+    ("Bloodborne — настройки  (Insert / L3+R3)", "Settings (Insert / L3+R3)"),
+    ("%.0f FPS  (%.1f мс)", "%.0f FPS  (%.1f ms)"),
+    ("Временной апскейлер", "Temporal upscaler"),
+    ("Выкл", "Off"),
+    ("TAA (нативное сглаживание)", "TAA (native)"),
+    ("Апскейлер", "Upscaler"),
+    ("— не поддерживается видеокартой", "— not supported by this GPU"),
+    ("— в работе", "— in use"),
+    ("FSR 4 недоступен: %s", "FSR 4 unavailable: %s"),
+    ("Активен режим, выбранный выше. FSR 4 можно выбрать снова.",
+     "The mode selected above is active. You can choose FSR 4 again."),
+    ("FSR 4.1.1 в режиме INT8: модель из DLL AMD 4.1.1, воспроизведённая в Vulkan (результат совпадает с DLL). Одна модель для Native..Performance и отдельная для Ultra Performance. Ассеты: tools/fsr4cap/build_assets.sh (нужны DLL и Proton).",
+     "FSR 4.1.1 INT8 replays an AMD 4.1.1 DLL on Vulkan. One model covers Native through Performance, and another covers Ultra Performance."),
+    ("FSR 4 в режиме INT8 (модель v07 из исходников AMD FidelityFX SDK). Качество выше, чем у FSR 3.1, но проход тяжелее. Смена пресета пересобирает модель (короткая пауза). Ассеты: tools/fetch_fsr4_assets.sh.",
+     "FSR 4 INT8 (FidelityFX SDK model v07). Sharper than FSR 3.1 and heavier. Changing the preset rebuilds the model."),
+    ("FSR 4: авто-экспозиция", "FSR 4: auto exposure"),
+    ("FSR 4: обратный знак jitter", "FSR 4: invert jitter"),
+    ("Проверка при гостинге: сеть FSR 4 нормирует цвет по экспозиции и по ней решает, когда отбросить прошлые кадры. Меняются сразу, без перезапуска.",
+     "FSR 4 uses exposure to decide when to drop old frames. This applies immediately."),
+    ("Пресет", "Preset"),
+    ("%s (x%.1f, рендер %dx%d)", "%s (x%.1f, render %dx%d)"),
+    ("TAA сглаживает сцену в разрешении вывода, без модели FSR и апскейлинга. Сохранённый пресет FSR восстановится при выборе FSR.",
+     "TAA smooths the scene at the output resolution, without an FSR model. Choosing FSR again restores the saved FSR preset."),
+    ("Активный рендер сцены: %d x %d", "Scene render: %d x %d"),
+    ("Пресет при запуске: %s", "Startup preset: %s"),
+    ("При выводе не 1080p вся игра рисуется в разрешении пресета (патч при запуске): это быстрее всего на Steam Deck и слабых GPU. Смена пресета или разрешения вывода — после перезапуска. Пункт «Смена разрешения на лету» ниже включает смену без перезапуска (постобработка тогда остаётся в 1080p, медленнее).",
+     "Below 1080p the scene is drawn at the preset size, which is faster on a weak GPU. Changing the preset or output size needs a restart unless live resolution is on. Live changes keep post-processing at 1080p and cost more."),
+    ("BB_RENDER_RES фиксирует размер сцены при запуске. Уберите эту явную переменную для смены разрешения и пресетов без перезапуска игры.",
+     "BB_RENDER_RES locks the scene size at startup. Remove it to change resolution and presets without restarting."),
+    ("Native AA: FSR работает как сглаживание. Остальные пресеты уменьшают разрешение отрисовки сцены относительно вывода. Интерфейс рисуется в разрешении вывода. Пресет применяется со следующего кадра без перезапуска игры.",
+     "Native AA uses FSR as anti-aliasing. Other presets draw the scene below the output size. The interface stays at the output size. The preset applies on the next frame."),
+    ("Резкость (RCAS)", "Sharpness (RCAS)"),
+    ("Сила резкости", "Sharpness"),
+    ("До 1 — резкость самого апскейлера (RCAS). Выше 1 добавляется ещё один проход RCAS. Ctrl+клик по ползунку — ввести точное значение.",
+     "Up to 1 is the upscaler's own sharpness. Above 1 adds another pass. Ctrl-click the slider to type a value."),
+    ("Субпиксельный сдвиг (jitter)", "Sub-pixel jitter"),
+    ("Каждый кадр сцена сдвигается на долю пикселя, и апскейлер собирает из нескольких кадров больше деталей. Без него получается только сглаживание по истории.",
+     "Each frame shifts the scene by a fraction of a pixel so the upscaler can recover detail. Without it, only history-based smoothing remains."),
+    ("Маска реактивности", "Reactive mask"),
+    ("Включить маску", "Enable mask"),
+    ("Помечает прозрачные эффекты (частицы, дымку), чтобы апскейлер меньше опирался на прошлые кадры. Меньше шлейфов за эффектами, но под ними возвращается дрожание.",
+     "Marks particles and haze so the upscaler relies less on previous frames. Effects trail less, but the area under them can shimmer."),
+    ("Масштаб", "Scale"),
+    ("Порог", "Threshold"),
+    ("Максимум", "Maximum"),
+    ("Показать маску (отладка)", "Show mask (debug)"),
+    ("Векторы движения персонажей", "Character motion vectors"),
+    ("Точные векторы для анимированных объектов: одежда и оружие меньше рассыпаются при движении. Статичная сцена не получает дополнительный проход. Изменение применяется после перезапуска игры.",
+     "Motion vectors for animated objects, so cloth and weapons smear less. A static scene skips the extra pass. Applies after a restart."),
+    ("Показать векторы движения (отладка)", "Show motion vectors (debug)"),
+    ("Красный/зелёный: движение по горизонтали/вертикали (8 пикселей = полная яркость). Синий: пиксель получил точный вектор объекта, а не только движение камеры. Движущийся предмет без синего и без красного/зелёного апскейлер считает неподвижным, отсюда шлейф.",
+     "Red and green are horizontal and vertical motion. Blue means the pixel has an object vector, not only camera motion. A moving object with neither is treated as still and leaves a trail."),
+    ("Генерация кадров", "Frame generation"),
+    ("FSR 3 (любая видеокарта)", "FSR 3 (any GPU)"),
+    ("Кадры между двумя кадрами игры: 60 FPS на экране становятся 120. Нужны представление Mailbox или Immediate и монитор с такой частотой. Немного добавляет задержку ввода. Меню и видеоролики не генерируются.",
+     "Draws frames between the game's frames, so 60 FPS displays as 120. Needs Mailbox or Immediate presentation and a display at that refresh rate. Adds a little input latency. Menus and videos are left as they are."),
+    ("Множитель", "Multiplier"),
+    ("Разрешение вывода", "Output resolution"),
+    ("Размер готового кадра и интерфейса. Пресет задаёт размер сцены относительно вывода: 4K Performance = 1920x1080. Применяется после перезапуска игры.",
+     "Size of the finished frame and the interface. The preset sets the scene size relative to that. 4K Performance = 1920x1080. Applies after a restart."),
+    ("Размер готового кадра и интерфейса меняется на границе следующего кадра. Пресет задаёт размер сцены относительно вывода: 4K Performance = 1920x1080. Смена размера сбрасывает историю FSR и может вызвать короткую паузу.",
+     "The finished frame and interface change on the next frame. The preset sets the scene size. 4K Performance = 1920x1080. Changing the size clears FSR history and can hitch briefly."),
+    ("Авто (по видеокарте)", "Auto (by GPU)"),
+    ("Выключена (быстрее)", "Off (faster)"),
+    ("Включена", "On"),
+    ("Смена разрешения на лету", "Live resolution"),
+    ("Включена: разрешение вывода и пресет меняются без перезапуска, но постобработка игры остаётся в 1080p — на Steam Deck и старых видеокартах это заметно медленнее. Выключена: всё рисуется в разрешении пресета, смена — через перезапуск. Авто включает её на мощных дискретных видеокартах. Применяется после перезапуска игры.",
+     "On: output size and preset change without a restart, but game post-processing stays at 1080p and costs more on a weak GPU. Off: everything is drawn at the preset size and changes need a restart. Auto turns it on for a fast discrete GPU. Applies after a restart."),
+    ("Эффекты игры (после перезапуска)", "Game effects (after restart)"),
+    ("Максимальная (-2)", "Highest (-2)"),
+    ("Как в игре", "In-game"),
+    ("Ниже (1)", "Lower (1)"),
+    ("Минимальная (2)", "Lowest (2)"),
+    ("Детализация моделей", "Model detail"),
+    ("Эффекты включаются и выключаются патчами игры при запуске (patches/Bloodborne.xml). Размытие в движении и тени от динамических источников заметно нагружают GPU.",
+     "These toggles apply Bloodborne patches at startup (patches/Bloodborne.xml). They do not change Uncharted. Motion blur and dynamic shadows cost GPU time."),
+    ("Свободная камера: удерживайте Cross и нажимайте L3 (клавиатура: Space + Z). Debug menu: левый touchpad / Tab. Нужны DbgFont14h.ccm и DbgFont14h.tpf в dvdroot_ps4/font из мода Nexus #253. Правый touchpad: Backspace.",
+     "Free camera: hold Cross and press L3 (keyboard: Space + Z). Debug menu: left touchpad or Tab. Needs font files from a Bloodborne mod. Right touchpad: Backspace."),
+    ("Изменения применятся после перезапуска игры", "Changes apply after the game restarts"),
+    ("Применить и перезапустить игру", "Apply and restart"),
+    ("Прочее", "Other"),
+    ("Счётчик FPS в углу", "FPS counter"),
+    ("Закрыть", "Close"),
+    ("Настройки сохраняются в bbport.ini", "Settings are saved in bbport.ini"),
+    ("Хроматическая аберрация", "Chromatic aberration"),
+    ("Глубина резкости (DoF)", "Depth of field (DoF)"),
+    ("Размытие в движении", "Motion blur"),
+    ("Затенение SSAO", "SSAO"),
+    ("Собственное сглаживание игры", "Game anti-aliasing"),
+    ("Тени от динамических источников", "Dynamic shadows"),
+    ("Отражения SSR (не было в игре)", "SSR (not in the original)"),
+    ("Пропуск заставок при запуске", "Skip startup logos"),
+    ("Свободная камера (Cross + L3)", "Free camera (Cross + L3)"),
+    ("Debug menu (нужны файлы шрифтов)", "Debug menu (needs font files)"),
+    ("Чит: бессмертие (не ниже 1 HP)", "Cheat: no death (at least 1 HP)"),
+    ("Чит: враги не замечают", "Cheat: enemies ignore you"),
+    ("Чит: враги не слышат", "Cheat: enemies cannot hear"),
+    ("Чит: Rally не угасает", "Cheat: Rally does not decay"),
+    ("Чит: управление врагом (R3 / L3)", "Cheat: control an enemy (R3 / L3)"),
+    ("Без Rally (возврата HP)", "No Rally (HP regain)"),
+    ("Камера дальше", "Camera farther"),
+    ("Без автоповорота камеры", "No automatic camera turn"),
+    ("Бег с меньшим наклоном стика", "Run with less stick tilt"),
+    ("Физика тел как в Dark Souls", "Dark Souls body physics"),
+    ("%.0f FPS  %.1f мс  %s", "%.0f FPS  %.1f ms  %s"),
+)
+
+
+def _translate_menu(data: bytearray) -> None:
+    for russian, english in MENU_ENGLISH:
+        old = russian.encode("utf-8")
+        new = english.encode("utf-8")
+        if len(new) > len(old):
+            raise ValueError(f"English label is longer than the Russian one: {english}")
+        needle = old + b"\0"
+        found = data.find(needle)
+        if found < 0:
+            raise ValueError(f"Menu string is missing: {russian}")
+        while found >= 0:
+            data[found:found + len(new)] = new
+            data[found + len(new)] = 0
+            found = data.find(needle, found + len(needle))
 
 
 if __name__ == "__main__":
