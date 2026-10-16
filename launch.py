@@ -148,9 +148,6 @@ def write_wrapper_bat(port: Path, game: Path, exe: str, probe: Path) -> Path:
         "set BB_UPSCALE_BEFORE_CS=aec539f0",
         "set BB_HUDLESS_PS=484cdbf5",
         "set BB_TIMEOUT=0",
-        # Drake's Deception compiles this fragment shader as the bar
-        # fight starts, and the graphics queue never retires that submit.
-        "set BB_SKIP_SHADERS=8a6f8d35",
         f"\"{windows_path(probe)}\" \"{windows_path(out / 'boot-linked.bin')}\" --content-profile \"{windows_path(out / 'content.bin')}\" --app0 \"{windows_path(game)}\" --user \"{windows_path(user)}\" --timeout 0 >> C:\\uncharted-out.txt 2>&1",
         "echo exit %ERRORLEVEL% >> C:\\uncharted-out.txt",
     ]
