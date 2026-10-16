@@ -139,6 +139,9 @@ def write_wrapper_bat(port: Path, game: Path, exe: str, probe: Path) -> Path:
         f"set BB_INPUT_CONFIG={windows_path(port / 'input.ini')}",
         f"set BB_LOADEXEC_FILE={windows_path(port / 'out' / 'loadexec.txt')}",
         "set BB_VBLANK_HZ=60",
+        # The texture cache otherwise grows to the GPU heap budget, about
+        # 15 GB here, and then spends every frame evicting images.
+        "set BB_GC_BUDGET_MB=6144",
         # Leave depth copies synced. Skipping that wait removed the chapter
         # hitch, and it also left depth of field focused on the wrong plane.
         "set BB_VELOCITY_PS=f4b18264",

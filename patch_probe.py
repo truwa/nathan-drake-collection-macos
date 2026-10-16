@@ -58,6 +58,7 @@ def patch(source: Path, destination: Path) -> None:
     _hook_tls(data)
     _enlarge_record_chunks(data)
     _translate_menu(data)
+    _coalesce_depth_sync(data)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_bytes(data)
@@ -356,6 +357,136 @@ MENU_ENGLISH = (
     ("Физика тел как в Dark Souls", "Dark Souls body physics"),
     ("%.0f FPS  %.1f мс  %s", "%.0f FPS  %.1f ms  %s"),
 )
+
+
+def _depth_sync_cave(cave_va: int) -> bytearray:
+    """Skip SyncImageToBuffer when this frame already synced that address.
+
+    OnGuestFlip bumps g_guest_frames once per presented frame. The large
+    depth copies repeat the same addresses inside that frame, and each one
+    waited on the GPU. The first wait still runs, so depth of field stays
+    on the current picture. A new address, or a full table, still syncs.
+    The remembered addresses live in writable BSS. The text page is not.
+    """
+    code = bytearray()
+    labels = {}
+    frames_va = 0x14361D898
+    sync_va = 0x14020AF30
+
+    def mark(name):
+        labels[name] = len(code)
+
+    def emit(*raw):
+        for item in raw:
+            code.extend(item if isinstance(item, (bytes, bytearray)) else bytes([item]))
+
+    def rip(at, target, end):
+        # end is how many bytes of this instruction follow the displacement.
+        return struct.pack("<i", target - (cave_va + at + end))
+
+    emit(0x44, 0x8B, 0x15)
+    frames_at = len(code)
+    emit(b"\0\0\0\0")
+    emit(0x44, 0x3B, 0x15)
+    cmp_frame_at = len(code)
+    emit(b"\0\0\0\0")
+    emit(0x74, 0)
+    je_same_at = len(code) - 1
+    emit(0x44, 0x89, 0x15)
+    mov_frame_at = len(code)
+    emit(b"\0\0\0\0")
+    emit(0xC7, 0x05)
+    mov_count_at = len(code)
+    emit(b"\0\0\0\0\0\0\0\0")
+    mark("same")
+    emit(0x45, 0x31, 0xDB)
+    emit(0x48, 0x8D, 0x05)
+    lea_at = len(code)
+    emit(b"\0\0\0\0")
+    mark("loop")
+    emit(0x44, 0x3B, 0x1D)
+    cmp_count_at = len(code)
+    emit(b"\0\0\0\0")
+    emit(0x73, 0)
+    jae_insert_at = len(code) - 1
+    emit(0x4A, 0x3B, 0x14, 0xD8)
+    emit(0x74, 0)
+    je_skip_at = len(code) - 1
+    emit(0x41, 0xFF, 0xC3)
+    emit(0xEB, 0)
+    jmp_loop_at = len(code) - 1
+    mark("insert")
+    emit(0x41, 0x83, 0xFB, 0x08)
+    emit(0x73, 0)
+    jae_call_at = len(code) - 1
+    emit(0x4A, 0x89, 0x14, 0xD8)
+    emit(0xFF, 0x05)
+    inc_count_at = len(code)
+    emit(b"\0\0\0\0")
+    mark("call")
+    emit(0xE9)
+    jmp_sync_at = len(code)
+    emit(b"\0\0\0\0")
+    mark("skip")
+    emit(0xC3)
+    while len(code) % 8:
+        emit(0x90)
+    # The table sits in this executable page, so the section is made writable.
+    frame_va = cave_va + len(code)
+    count_va = frame_va + 4
+    addrs_va = frame_va + 8
+
+    def near(at, name):
+        code[at] = (labels[name] - (at + 1)) & 0xFF
+
+    near(je_same_at, "same")
+    near(jae_insert_at, "insert")
+    near(je_skip_at, "skip")
+    near(jmp_loop_at, "loop")
+    near(jae_call_at, "call")
+    code[frames_at:frames_at + 4] = rip(frames_at, frames_va, 4)
+    code[cmp_frame_at:cmp_frame_at + 4] = rip(cmp_frame_at, frame_va, 4)
+    code[mov_frame_at:mov_frame_at + 4] = rip(mov_frame_at, frame_va, 4)
+    # The immediate zero follows this displacement, so RIP is 8 bytes on.
+    code[mov_count_at:mov_count_at + 4] = rip(mov_count_at, count_va, 8)
+    code[lea_at:lea_at + 4] = rip(lea_at, addrs_va, 4)
+    code[cmp_count_at:cmp_count_at + 4] = rip(cmp_count_at, count_va, 4)
+    code[inc_count_at:inc_count_at + 4] = rip(inc_count_at, count_va, 4)
+    code[jmp_sync_at:jmp_sync_at + 4] = rip(jmp_sync_at, sync_va, 4)
+    code.extend(b"\0" * (8 + 64))
+    return code
+
+
+def _coalesce_depth_sync(data: bytearray) -> None:
+    image = 0x140000000
+    text_va, text_raw, text_vsize = 0x1000, 0x400, 0x53A4D6
+    cave_va = image + text_va + text_vsize
+    cave = _depth_sync_cave(cave_va)
+    if text_vsize + len(cave) > 0x53A600:
+        raise ValueError("depth-sync cave does not fit in the text section")
+
+    call_va = 0x14027C685
+    call_file = text_raw + (call_va - image - text_va)
+    call = bytes(data[call_file:call_file + 5])
+    if call != bytes.fromhex("e8a6e8f8ff"):
+        raise ValueError(f"depth sync call does not match this probe ({call.hex()})")
+    data[call_file:call_file + 5] = b"\xe8" + struct.pack("<i", cave_va - (call_va + 5))
+
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    opt = struct.unpack_from("<H", data, pe + 20)[0]
+    section = pe + 24 + opt
+    name = bytes(data[section:section + 8]).split(b"\0", 1)[0]
+    vsize, virtual, rawsize = struct.unpack_from("<III", data, section + 8)
+    if name != b".text" or vsize != text_vsize or virtual != text_va or rawsize != 0x53A600:
+        raise ValueError("text section is not the expected size")
+    struct.pack_into("<I", data, section + 8, text_vsize + len(cave))
+    # The remembered addresses are stored in this page.
+    characteristics = struct.unpack_from("<I", data, section + 36)[0]
+    struct.pack_into("<I", data, section + 36, characteristics | 0x80000000)
+    file_at = text_raw + text_vsize
+    if any(byte not in (0x00, 0xCC) for byte in data[file_at:file_at + len(cave)]):
+        raise ValueError("depth-sync cave overlaps existing code")
+    data[file_at:file_at + len(cave)] = cave
 
 
 def _translate_menu(data: bytearray) -> None:
