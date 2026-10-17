@@ -2,3 +2,4 @@
 *.exe
 *.tmp
 __pycache__/
+dist/
