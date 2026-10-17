@@ -60,6 +60,7 @@ def patch(source: Path, destination: Path) -> None:
     _translate_menu(data)
     _coalesce_depth_sync(data)
     _round_arena_binds(data)
+    _claim_shadow_blocks(data)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_bytes(data)
@@ -552,6 +553,102 @@ def _round_arena_binds(data: bytearray) -> None:
     data[file_at:file_at + len(cave)] = cave
     data[site_file:site_file + 6] = b"\xe9" + struct.pack("<i", cave_va - (site_va + 5)) + b"\x90"
     struct.pack_into("<I", data, section + 8, cave_rva - text_va + len(cave))
+
+
+def _claim_shadow_blocks(data: bytearray) -> None:
+    """Let a guest write claim its whole 64-byte block from the GPU's copy.
+
+    When the guest touches a page holding GPU data, ShadowGpuData snapshots the
+    guest bytes. DownloadMemory and SynchronizeMemory then keep the GPU's byte
+    wherever the guest byte still equals the snapshot, so a store of an
+    unchanged value (zero over zero) is lost. Drake's Deception's allocator
+    relies on such stores and its shaders hang on the mixed result at the first
+    London bar fight. Before either loop reads a snapshot {start, begin, end},
+    each aligned 64-byte block with any changed byte gets the complement of the
+    guest bytes, so the existing byte loops hand the whole block to the guest.
+    Snapshots are discarded after these loops.
+    """
+    image = 0x140000000
+    text_va, text_raw = 0x1000, 0x400
+    sites = (
+        # DownloadMemory, shadow record in rbx: mov r14, [rbx]; xor esi, esi
+        (0x14020695D, 0x140206970, "4c8b3331f6", "4989da", "4c8b3331f6"),
+        # SynchronizeMemory upload walk, record in r14: mov rbx, [r14]; xor r8d, r8d; jmp
+        (0x14020D904, 0x14020D91E, "498b1e4531c0eb12", "4d89f2", "498b1e4531c0"),
+    )
+    for site_va, _, original, _, _ in sites:
+        at = text_raw + site_va - image - text_va
+        if bytes(data[at:at + len(original) // 2]).hex() != original:
+            raise ValueError(f"shadow merge loop at {site_va:#x} does not match this probe")
+
+    # .text has no slack left, so this goes at the end of the TLS hook section,
+    # which is the last section in the file.
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    count = struct.unpack_from("<H", data, pe + 6)[0]
+    optional = pe + 24
+    section = optional + struct.unpack_from("<H", data, pe + 20)[0] + (count - 1) * 40
+    if data[section:section + 8] != b".umac\0\0\0":
+        raise ValueError("TLS hook section is not the last section")
+    section_alignment, file_alignment = struct.unpack_from("<II", data, optional + 32)
+    vsize, section_rva, raw_size, raw_offset = struct.unpack_from("<IIII", data, section + 8)
+    if raw_offset + raw_size != len(data):
+        raise ValueError("TLS hook section is not at the end of the file")
+    cave_rva = section_rva + align(vsize, 16)
+    cave_va = image + cave_rva
+    # claim(r10 = record): preserves every register but r10.
+    cave = bytearray(bytes.fromhex(
+        "505152415041514153"    # push rax, rcx, rdx, r8, r9, r11
+        "4d8b02"                # mov r8, [r10]             guest start
+        "4d8b4a08"              # mov r9, [r10+8]           snapshot
+        "4d8b5a10"              # mov r11, [r10+16]
+        "4d29cb"                # sub r11, r9               count
+        "31c0"                  # xor eax, eax              block start
+        "4c39d8"                # .block: cmp rax, r11
+        "7349"                  # jae .done
+        "498d540040"            # lea rdx, [r8+rax+64]
+        "4883e2c0"              # and rdx, -64
+        "4c29c2"                # sub rdx, r8
+        "4c39da"                # cmp rdx, r11
+        "490f47d3"              # cmova rdx, r11            block end
+        "4889c1"                # mov rcx, rax
+        "4839d1"                # .scan: cmp rcx, rdx
+        "7329"                  # jae .next
+        "450fb61408"            # movzx r10d, byte [r8+rcx]
+        "453a1409"              # cmp r10b, [r9+rcx]
+        "7505"                  # jne .claim
+        "48ffc1"                # inc rcx
+        "ebeb"                  # jmp .scan
+        "4889c1"                # .claim: mov rcx, rax
+        "4839d1"                # .fill: cmp rcx, rdx
+        "7311"                  # jae .next
+        "450fb61408"            # movzx r10d, byte [r8+rcx]
+        "41f7d2"                # not r10d
+        "45881409"              # mov [r9+rcx], r10b
+        "48ffc1"                # inc rcx
+        "ebea"                  # jmp .fill
+        "4889d0"                # .next: mov rax, rdx
+        "ebb2"                  # jmp .block
+        "415b415941585a5958"    # .done: pop r11, r9, r8, rdx, rcx, rax
+        "c3"))                  # ret
+    hooks = []
+    for site_va, resume_va, original, load_record, replay in sites:
+        stub_va = cave_va + len(cave)
+        cave += bytes.fromhex("4152" + load_record + "e8")  # push r10; mov r10, record; call claim
+        cave += struct.pack("<i", cave_va - (cave_va + len(cave) + 4))
+        cave += bytes.fromhex("415a" + replay + "e9")       # pop r10; original loop setup; jmp
+        cave += struct.pack("<i", resume_va - (cave_va + len(cave) + 4))
+        hooks.append((site_va, stub_va, len(original) // 2))
+    vsize = cave_rva - section_rva + len(cave)
+    data.extend(bytes(raw_offset + align(vsize, file_alignment) - len(data)))
+    file_at = raw_offset + cave_rva - section_rva
+    data[file_at:file_at + len(cave)] = cave
+    for site_va, stub_va, length in hooks:
+        at = text_raw + site_va - image - text_va
+        jump = b"\xe9" + struct.pack("<i", stub_va - (site_va + 5))
+        data[at:at + length] = jump + b"\x90" * (length - 5)
+    struct.pack_into("<II", data, section + 8, vsize, section_rva)
+    struct.pack_into("<I", data, section + 16, align(vsize, file_alignment))
+    struct.pack_into("<I", data, optional + 56, align(section_rva + vsize, section_alignment))
 
 
 def _translate_menu(data: bytearray) -> None:
