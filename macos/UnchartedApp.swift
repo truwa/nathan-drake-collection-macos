@@ -99,6 +99,14 @@ final class LauncherModel: ObservableObject {
 
     func play(_ game: GameRow, display: String, metalHud: Bool) {
         guard let dumpURL, game.available, !running else { return }
+        if !wineReady {
+            if wineInstalled {
+                beginWineSetup(force: false)
+            } else {
+                confirmWineDownload(force: false)
+            }
+            return
+        }
         running = true
         runningGame = game.title
         runningGameID = game.id
@@ -150,6 +158,25 @@ final class LauncherModel: ObservableObject {
         } catch {
             running = false
             status = "Cannot start: \(error.localizedDescription)"
+        }
+    }
+
+    func killWine() {
+        logTimer?.invalidate()
+        windowTimer?.invalidate()
+        gameProcess?.terminate()
+        running = false
+        runningGame = nil
+        runningGameID = nil
+        gameProcess = nil
+        sawGameWindow = false
+        status = "Stopping Wine processes…"
+        runPort(["--kill-wine"]) { [weak self] line in
+            guard let self, line.hasPrefix("status ") else { return }
+            self.status = String(line.dropFirst("status ".count))
+        } onExit: { [weak self] code in
+            guard let self, !self.status.hasPrefix("Wine processes") else { return }
+            self.status = code == 0 ? "Wine processes stopped." : "Could not stop the Wine processes."
         }
     }
 
@@ -315,18 +342,58 @@ final class LauncherModel: ObservableObject {
         return text
     }
 
+    private var wineInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: SupportFolder.url.appendingPathComponent("wine/bin/wine").path)
+    }
+
+    private var wineReady: Bool {
+        wineInstalled && FileManager.default.fileExists(atPath: SupportFolder.url.appendingPathComponent("prefix/system.reg").path)
+    }
+
     func prepareWine() {
-        let wine = SupportFolder.url.appendingPathComponent("wine/bin/wine")
-        let prefix = SupportFolder.url.appendingPathComponent("prefix/system.reg")
-        if FileManager.default.isExecutableFile(atPath: wine.path),
-           FileManager.default.fileExists(atPath: prefix.path) {
+        if wineReady {
             loadWineVersion()
             return
         }
         guard !updating else { return }
+        if !wineInstalled {
+            DispatchQueue.main.async { [weak self] in self?.confirmWineDownload(force: false) }
+            return
+        }
+        beginWineSetup(force: false)
+    }
+
+    func updateWine() {
+        guard !updating, !running else { return }
+        confirmWineDownload(force: true)
+    }
+
+    private func confirmWineDownload(force: Bool) {
+        guard !updating else { return }
+        if !force, wineInstalled { return }
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        if force {
+            alert.messageText = "Update Wine"
+            alert.informativeText = "The latest WineHQ macOS build will be downloaded, about 180 MB. It replaces the Wine copy used by this launcher. Saves and settings stay."
+        } else {
+            alert.messageText = "Wine will be downloaded"
+            alert.informativeText = "The launcher does not include Wine. The latest WineHQ macOS build is about 180 MB. It is downloaded once, then a private Wine environment is created."
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Not Now")
+        if alert.runModal() == .alertFirstButtonReturn {
+            beginWineSetup(force: force)
+        } else if !wineInstalled {
+            status = "Wine is downloaded before a game can start."
+        }
+    }
+
+    private func beginWineSetup(force: Bool) {
+        guard !updating else { return }
         updating = true
-        status = "Downloading Wine…"
-        runPort(["--setup-wine"]) { [weak self] line in
+        status = !force && wineInstalled ? "Creating the Wine environment…" : "Downloading Wine…"
+        runPort([force ? "--update-wine" : "--setup-wine"]) { [weak self] line in
             guard let self else { return }
             if line.hasPrefix("progress ") {
                 let phase = self.status.hasPrefix("Creating") ? "Creating the Wine environment" : "Downloading Wine"
@@ -885,8 +952,15 @@ struct ContentView: View {
                         Toggle("Metal HUD", isOn: $metalHud)
                             .disabled(model.running)
                     }
-                    Text(wineLabel)
-                        .lineLimit(1)
+                    HStack {
+                        Text(wineLabel)
+                            .lineLimit(1)
+                        Spacer()
+                        Button("Kill all wine processes") { model.killWine() }
+                            .disabled(model.updating)
+                        Button("Update Wine") { model.updateWine() }
+                            .disabled(model.running || model.updating)
+                    }
                     HStack {
                         Text(portLabel)
                             .lineLimit(1)

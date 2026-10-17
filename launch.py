@@ -648,8 +648,26 @@ def download_wine(destination: Path | None = None) -> Path:
     return installed
 
 
-def setup_wine() -> str:
+def kill_wine() -> None:
     wine_root = installed_wine()
+    if wine_root is None:
+        resources = resources_root()
+        if resources is not None and (resources / "wine/bin/wine").is_file():
+            wine_root = resources / "wine"
+        elif (WINE_DIST / "bin/wine").is_file():
+            wine_root = WINE_DIST
+    if wine_root is None:
+        print("status Wine is not installed", flush=True)
+        return
+    environment = os.environ.copy()
+    environment["WINEPREFIX"] = str(SUPPORT / "prefix")
+    environment["PATH"] = str(wine_root / "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin"
+    subprocess.run([str(wine_root / "bin/wineserver"), "-k"], env=environment, check=False)
+    print("status Wine processes stopped", flush=True)
+
+
+def setup_wine(force: bool = False) -> str:
+    wine_root = None if force else installed_wine()
     if wine_root is None:
         wine_root = download_wine()
     version = wine_version_text()
@@ -780,8 +798,13 @@ def main() -> int:
                         help="Start in a window or full screen")
     parser.add_argument("--metal-hud", action="store_true", help="Show the Metal performance HUD")
     parser.add_argument("--list", action="store_true", help="Print which games are in the dump")
+    parser.add_argument("--check", action="store_true", help="Create the Wine prefix and print the engine")
     parser.add_argument("--setup-wine", action="store_true",
                         help="Download Wine if needed and create the prefix")
+    parser.add_argument("--update-wine", action="store_true",
+                        help="Download the latest Wine again and keep the prefix")
+    parser.add_argument("--kill-wine", action="store_true",
+                        help="Stop the Wine processes for this launcher")
     parser.add_argument("--check-port", action="store_true",
                         help="Print the installed Windows port and the latest release")
     parser.add_argument("--download-port", action="store_true",
@@ -792,8 +815,11 @@ def main() -> int:
                         help="Version stamp to write when installing a zip")
     args = parser.parse_args()
     try:
-        if args.setup_wine:
-            setup_wine()
+        if args.kill_wine:
+            kill_wine()
+            return 0
+        if args.setup_wine or args.update_wine:
+            setup_wine(force=args.update_wine)
             return 0
         if args.check:
             return check_engine(args.port.expanduser().resolve() if args.port else None)
