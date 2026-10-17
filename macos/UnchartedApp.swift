@@ -38,6 +38,7 @@ final class LauncherModel: ObservableObject {
     @Published var runningGameID: String?
     @Published var portVersion = ""
     @Published var portUpdate: String?
+    @Published var wineVersion = ""
     @Published var updating = false
     @Published var showCredits = false
 
@@ -57,6 +58,7 @@ final class LauncherModel: ObservableObject {
 
     func restore() {
         loadPortVersion()
+        loadWineVersion()
         if let data = UserDefaults.standard.data(forKey: "dumpBookmark") {
             var stale = false
             if let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale) {
@@ -313,6 +315,45 @@ final class LauncherModel: ObservableObject {
         return text
     }
 
+    func prepareWine() {
+        let wine = SupportFolder.url.appendingPathComponent("wine/bin/wine")
+        let prefix = SupportFolder.url.appendingPathComponent("prefix/system.reg")
+        if FileManager.default.isExecutableFile(atPath: wine.path),
+           FileManager.default.fileExists(atPath: prefix.path) {
+            loadWineVersion()
+            return
+        }
+        guard !updating else { return }
+        updating = true
+        status = "Downloading Wine…"
+        runPort(["--setup-wine"]) { [weak self] line in
+            guard let self else { return }
+            if line.hasPrefix("progress ") {
+                let phase = self.status.hasPrefix("Creating") ? "Creating the Wine environment" : "Downloading Wine"
+                if phase == "Downloading Wine" {
+                    self.status = "Downloading Wine… \(line.dropFirst("progress ".count))%"
+                }
+            } else if line.hasPrefix("status ") {
+                self.status = String(line.dropFirst("status ".count))
+            } else if line.hasPrefix("installed wine ") {
+                self.wineVersion = String(line.dropFirst("installed wine ".count))
+            } else if line.hasPrefix("ready ") {
+                self.wineVersion = String(line.dropFirst("ready ".count))
+            }
+        } onExit: { [weak self] code in
+            guard let self else { return }
+            self.updating = false
+            self.loadWineVersion()
+            if code != 0 {
+                self.status = "Wine setup did not finish. Open the launcher again to retry."
+            } else if self.dumpURL == nil {
+                self.status = "Choose the folder that contains the game dump."
+            } else {
+                self.refresh()
+            }
+        }
+    }
+
     func checkPort() {
         guard !updating else { return }
         updating = true
@@ -505,6 +546,13 @@ final class LauncherModel: ObservableObject {
         return seen
     }
 
+    private func loadWineVersion() {
+        let url = SupportFolder.url.appendingPathComponent("WINE_VERSION")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let version = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !version.isEmpty { wineVersion = version }
+    }
+
     private func loadPortVersion() {
         let installed = SupportFolder.url.appendingPathComponent("port/PORT_VERSION")
         let bundled = resources.appendingPathComponent("port/PORT_VERSION")
@@ -575,10 +623,10 @@ private let creditBlocks: [CreditBlock] = [
         CreditEntry(text: "GPL-2.0"),
         CreditEntry(text: "github.com/Supermedo/uncharted_pc", url: URL(string: "https://github.com/Supermedo/uncharted_pc")),
     ]),
-    CreditBlock(heading: "Wine 11.18", lines: [
+    CreditBlock(heading: "Wine", lines: [
         CreditEntry(text: "LGPL-2.1-or-later"),
-        CreditEntry(text: "gitlab.winehq.org/wine/wine", url: URL(string: "https://gitlab.winehq.org/wine/wine/-/releases/wine-11.18")),
-        CreditEntry(text: "macOS build by Gcenx", url: URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/tag/11.18")),
+        CreditEntry(text: "Downloaded on first launch"),
+        CreditEntry(text: "macOS build by Gcenx", url: URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/latest")),
     ]),
     CreditBlock(heading: "KosmicKrisp", lines: [
         CreditEntry(text: "Mesa 26.3.0-devel"),
@@ -837,6 +885,8 @@ struct ContentView: View {
                         Toggle("Metal HUD", isOn: $metalHud)
                             .disabled(model.running)
                     }
+                    Text(wineLabel)
+                        .lineLimit(1)
                     HStack {
                         Text(portLabel)
                             .lineLimit(1)
@@ -896,6 +946,7 @@ struct ContentView: View {
             optionsOpen = false
             applyAppearance()
             model.restore()
+            model.prepareWine()
         }
         .onChange(of: model.showCredits) { _, showing in
             if showing { NSApp.keyWindow?.makeFirstResponder(nil) }
@@ -917,6 +968,11 @@ struct ContentView: View {
         case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
         default: NSApp.appearance = nil
         }
+    }
+
+    private var wineLabel: String {
+        if model.wineVersion.isEmpty { return "Wine downloads on first launch" }
+        return "Wine \(model.wineVersion)"
     }
 
     private var portLabel: String {

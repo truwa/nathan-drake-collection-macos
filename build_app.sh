@@ -3,7 +3,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/dist/Uncharted.app"
-WINE_SRC="${WINE_SRC:-$ROOT/dist/upstream/wine-extract/Wine Devel.app/Contents/Resources/wine}"
 KOSMIC_SRC="${KOSMIC_SRC:-$ROOT/dist/upstream/kosmickrisp-x86_64}"
 PORT_SRC="${PORT_SRC:-/Volumes/S990PRO/uncharted-windows}"
 
@@ -14,14 +13,6 @@ mkdir -p "$APP/Contents/MacOS" \
     "$APP/Contents/Resources/port/licenses" \
     "$APP/Contents/Frameworks"
 
-# WineHQ 11.18. Gecko, Mono, and MoltenVK stay out; KosmicKrisp is the Vulkan driver.
-rsync -a \
-    --exclude '/share/wine/gecko' \
-    --exclude '/share/wine/mono' \
-    --exclude '/lib/libMoltenVK.dylib' \
-    --exclude '/lib/wine/x86_64-unix/vulkan' \
-    "$WINE_SRC/" \
-    "$APP/Contents/Resources/wine/"
 cp "$KOSMIC_SRC/libvulkan_kosmickrisp.dylib" "$APP/Contents/Frameworks/"
 cp "$KOSMIC_SRC/kosmickrisp_icd.json" "$APP/Contents/Resources/vulkan/icd.d/"
 

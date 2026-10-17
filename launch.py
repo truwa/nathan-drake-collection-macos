@@ -4,9 +4,10 @@ from __future__ import annotations
 """Start the Uncharted Windows port with Wine and KosmicKrisp.
 
 The dump stays where the user put it. Prepared images, saves, and the Wine
-prefix live under ~/Library/Application Support/Nathan Drake Collection. A bundled
-engine is used when this file sits in the app. Otherwise WineHQ 11.18 and
-the x86-64 KosmicKrisp cache under dist/upstream are used.
+prefix live under ~/Library/Application Support/Nathan Drake Collection. The
+first launch downloads the latest WineHQ macOS build from Gcenx and creates
+the prefix. A bundled engine is used when this file sits in the app. Otherwise
+the x86-64 KosmicKrisp cache under dist/upstream is used.
 """
 import argparse
 import json
@@ -17,6 +18,7 @@ import signal
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 import zipfile
@@ -38,6 +40,8 @@ adopt_support_folder()
 DLL_NAME = "uncharted-crossover-tls.dll"
 UPSTREAM = ROOT / "dist/upstream"
 WINE_DIST = UPSTREAM / "wine-extract/Wine Devel.app/Contents/Resources/wine"
+WINE_RELEASE_API = "https://api.github.com/repos/Gcenx/macOS_Wine_builds/releases/latest"
+INSTALLED_WINE = SUPPORT / "wine"
 KOSMIC_DIST = UPSTREAM / "kosmickrisp-x86_64"
 FALLBACK_PORT = Path("/Volumes/S990PRO/uncharted-windows")
 INSTALLED_PORT = SUPPORT / "port"
@@ -168,25 +172,43 @@ def resources_root() -> Path | None:
     if chosen:
         return Path(chosen)
     candidate = ROOT.parent
-    if (candidate / "wine/bin/wine").is_file() and (candidate / "port/bin/bb-probe.exe").is_file():
+    if (candidate / "port/bin/bb-probe.exe").is_file():
         return candidate
     return None
 
 
-def resolve_engine(port_override: Path | None):
+def installed_wine() -> Path | None:
+    if (INSTALLED_WINE / "bin/wine").is_file() and (INSTALLED_WINE / "bin/wineserver").is_file():
+        return INSTALLED_WINE
+    return None
+
+
+def engine_parts(port_override: Path | None):
     resources = resources_root()
     if resources is not None:
-        wine_root = resources / "wine"
         icd = resources / "vulkan/icd.d/kosmickrisp_icd.json"
         frameworks = resources.parent / "Frameworks"
         port = port_override or installed_port() or (resources / "port")
         kosmic = frameworks / "libvulkan_kosmickrisp.dylib"
     else:
-        wine_root = WINE_DIST
         icd = KOSMIC_DIST / "kosmickrisp_icd.json"
         frameworks = KOSMIC_DIST
         port = port_override or installed_port() or FALLBACK_PORT
         kosmic = frameworks / "libvulkan_kosmickrisp.dylib"
+    return icd, frameworks, kosmic, port
+
+
+def resolve_engine(port_override: Path | None):
+    wine_root = installed_wine()
+    if wine_root is None:
+        resources = resources_root()
+        if resources is not None and (resources / "wine/bin/wine").is_file():
+            wine_root = resources / "wine"
+        elif resources is None and (WINE_DIST / "bin/wine").is_file():
+            wine_root = WINE_DIST
+        else:
+            wine_root = download_wine()
+    icd, frameworks, kosmic, port = engine_parts(port_override)
     wine = wine_root / "bin/wine"
     missing = [path for path in (wine, wine_root / "bin/wineserver", icd, kosmic, port / "bin/bb-probe.exe")
                if not path.is_file()]
@@ -497,6 +519,151 @@ def install_port_zip(zip_path: Path, version: str | None = None, destination: Pa
     return stamp.lstrip("vV")
 
 
+def fetch_latest_wine() -> tuple[str, str]:
+    request = urllib.request.Request(WINE_RELEASE_API, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "uncharted-macos",
+    })
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+    tag = str(payload.get("tag_name") or "").strip().lstrip("vV")
+    assets = payload.get("assets") or []
+    match = next((asset for asset in assets
+                  if str(asset.get("name") or "").startswith("wine-devel-")
+                  and str(asset.get("name") or "").endswith("-osx64.tar.xz")), None)
+    if match is None or not tag or not match.get("browser_download_url"):
+        raise ValueError("The latest Wine release has no wine-devel macOS build")
+    return tag, str(match["browser_download_url"])
+
+
+def _wine_payload_skipped(relative: str) -> bool:
+    path = relative.replace("\\", "/").strip("/")
+    return (path == "share/wine/gecko" or path.startswith("share/wine/gecko/")
+            or path == "share/wine/mono" or path.startswith("share/wine/mono/")
+            or path.endswith("libMoltenVK.dylib")
+            or path == "lib/wine/x86_64-unix/vulkan" or path.startswith("lib/wine/x86_64-unix/vulkan/"))
+
+
+def _link_stays_inside(root: Path, link_path: Path, linkname: str) -> bool:
+    if linkname.startswith("/"):
+        return False
+    normalized = os.path.normpath(str(link_path.parent / linkname))
+    root_path = os.path.normpath(str(root))
+    return normalized == root_path or normalized.startswith(root_path + os.sep)
+
+
+def install_wine_archive(archive_path: Path, version: str, destination: Path | None = None) -> Path:
+    destination = destination or INSTALLED_WINE
+    staging = destination.with_name(destination.name + ".new")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        with tarfile.open(archive_path, "r:xz") as archive:
+            root = ""
+            for member in archive.getmembers():
+                name = member.name.replace("\\", "/")
+                if name.endswith("/bin/wine") or name.endswith("bin/wine"):
+                    root = name[: -len("bin/wine")]
+                    break
+            if not root:
+                raise ValueError("The Wine archive has no bin/wine")
+            for member in archive.getmembers():
+                name = member.name.replace("\\", "/")
+                if not name.startswith(root):
+                    continue
+                relative = name[len(root):]
+                if not relative or ".." in Path(relative).parts or _wine_payload_skipped(relative):
+                    continue
+                target = staging / relative
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.is_symlink() or target.exists():
+                    target.unlink()
+                if member.issym():
+                    if _link_stays_inside(staging, target, member.linkname):
+                        os.symlink(member.linkname, target)
+                    continue
+                if not member.isfile():
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    continue
+                with source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                os.chmod(target, member.mode & 0o777)
+        if not (staging / "bin/wine").is_file() or not (staging / "bin/wineserver").is_file():
+            raise ValueError("The Wine archive did not contain a usable build")
+        previous = destination.with_name(destination.name + ".old")
+        if previous.exists():
+            shutil.rmtree(previous)
+        if destination.exists():
+            destination.rename(previous)
+        staging.rename(destination)
+        if previous.exists():
+            shutil.rmtree(previous)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+    (destination.parent / "WINE_VERSION").write_text(version.lstrip("vV") + "\n", encoding="utf-8")
+    return destination
+
+
+def wine_version_text() -> str:
+    stamp = SUPPORT / "WINE_VERSION"
+    if stamp.is_file():
+        text = stamp.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            return text
+    return "unknown"
+
+
+def download_wine(destination: Path | None = None) -> Path:
+    tag, url = fetch_latest_wine()
+    print(f"status Downloading Wine {tag}", flush=True)
+    request = urllib.request.Request(url, headers={"User-Agent": "uncharted-macos"})
+    with tempfile.TemporaryDirectory(prefix="uncharted-wine-") as folder:
+        archive = Path(folder) / f"wine-devel-{tag}-osx64.tar.xz"
+        with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as output:
+            total = int(response.headers.get("Content-Length") or 0)
+            received = 0
+            reported = -1
+            while True:
+                chunk = response.read(1 << 20)
+                if not chunk:
+                    break
+                output.write(chunk)
+                received += len(chunk)
+                if total:
+                    percent = received * 100 // total
+                    if percent != reported:
+                        reported = percent
+                        print(f"progress {percent}", flush=True)
+        print("status Installing Wine", flush=True)
+        installed = install_wine_archive(archive, tag, destination)
+    print(f"installed wine {tag}", flush=True)
+    return installed
+
+
+def setup_wine() -> str:
+    wine_root = installed_wine()
+    if wine_root is None:
+        wine_root = download_wine()
+    version = wine_version_text()
+    icd, frameworks, kosmic, _port = engine_parts(None)
+    prefix = SUPPORT / "prefix"
+    environment = wine_environment(prefix, icd, frameworks, kosmic, wine_root)
+    system32 = prefix / "drive_c/windows/system32"
+    if not ((prefix / "system.reg").is_file() and system32.is_dir() and any(system32.iterdir())):
+        print("status Creating the Wine environment", flush=True)
+        ensure_prefix(wine_root / "bin/wine", environment)
+    print(f"ready {version}", flush=True)
+    return version
+
+
 def download_port(destination: Path | None = None) -> str:
     tag, url, _digest = fetch_latest_port()
     print(f"status Downloading Windows port {tag}", flush=True)
@@ -613,7 +780,8 @@ def main() -> int:
                         help="Start in a window or full screen")
     parser.add_argument("--metal-hud", action="store_true", help="Show the Metal performance HUD")
     parser.add_argument("--list", action="store_true", help="Print which games are in the dump")
-    parser.add_argument("--check", action="store_true", help="Create the Wine prefix and print the engine")
+    parser.add_argument("--setup-wine", action="store_true",
+                        help="Download Wine if needed and create the prefix")
     parser.add_argument("--check-port", action="store_true",
                         help="Print the installed Windows port and the latest release")
     parser.add_argument("--download-port", action="store_true",
@@ -624,6 +792,9 @@ def main() -> int:
                         help="Version stamp to write when installing a zip")
     args = parser.parse_args()
     try:
+        if args.setup_wine:
+            setup_wine()
+            return 0
         if args.check:
             return check_engine(args.port.expanduser().resolve() if args.port else None)
         if args.check_port or args.download_port or args.install_port:

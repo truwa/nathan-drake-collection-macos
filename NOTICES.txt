@@ -5,10 +5,11 @@ This app runs the Uncharted Windows port under Wine. It is not a native Mac
 port. The game itself is not included. You choose the folder that contains
 your own decrypted dump (eboot.bin, big2-ps4_Shipping.elf, big3-ps4_Shipping.elf).
 
-Wine 11.18
+Wine
   LGPL-2.1-or-later
-  https://gitlab.winehq.org/wine/wine/-/releases/wine-11.18
-  macOS x86-64 build: https://github.com/Gcenx/macOS_Wine_builds/releases/tag/11.18
+  https://gitlab.winehq.org/wine/wine
+  The macOS build by Gcenx is downloaded the first time the launcher opens.
+  https://github.com/Gcenx/macOS_Wine_builds/releases/latest
 
 KosmicKrisp
   MIT, part of Mesa 26.3.0-devel (git-063dfaeec5)
