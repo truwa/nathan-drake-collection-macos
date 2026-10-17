@@ -4,7 +4,7 @@ from __future__ import annotations
 """Start the Uncharted Windows port with Wine and KosmicKrisp.
 
 The dump stays where the user put it. Prepared images, saves, and the Wine
-prefix live under ~/Library/Application Support/Uncharted MacOS. A bundled
+prefix live under ~/Library/Application Support/Nathan Drake Collection. A bundled
 engine is used when this file sits in the app. Otherwise WineHQ 11.18 and
 the x86-64 KosmicKrisp cache under dist/upstream are used.
 """
@@ -17,16 +17,32 @@ import signal
 import struct
 import subprocess
 import sys
+import tempfile
+import urllib.request
+import zipfile
 
 import patch_probe
 
 ROOT = Path(__file__).resolve().parent
-SUPPORT = Path.home() / "Library/Application Support/Uncharted MacOS"
+_PREVIOUS_SUPPORT = Path.home() / "Library/Application Support/Uncharted MacOS"
+SUPPORT = Path.home() / "Library/Application Support/Nathan Drake Collection"
+
+
+def adopt_support_folder() -> None:
+    if _PREVIOUS_SUPPORT.exists() and not SUPPORT.exists():
+        SUPPORT.parent.mkdir(parents=True, exist_ok=True)
+        _PREVIOUS_SUPPORT.rename(SUPPORT)
+
+
+adopt_support_folder()
 DLL_NAME = "uncharted-crossover-tls.dll"
 UPSTREAM = ROOT / "dist/upstream"
 WINE_DIST = UPSTREAM / "wine-extract/Wine Devel.app/Contents/Resources/wine"
 KOSMIC_DIST = UPSTREAM / "kosmickrisp-x86_64"
 FALLBACK_PORT = Path("/Volumes/S990PRO/uncharted-windows")
+INSTALLED_PORT = SUPPORT / "port"
+PORT_RELEASE_API = "https://api.github.com/repos/Supermedo/uncharted_pc/releases/latest"
+PORT_ASSET = "uncharted-windows.zip"
 
 GAMES = (
     ("u1", "Drake's Fortune", "eboot.bin"),
@@ -163,13 +179,13 @@ def resolve_engine(port_override: Path | None):
         wine_root = resources / "wine"
         icd = resources / "vulkan/icd.d/kosmickrisp_icd.json"
         frameworks = resources.parent / "Frameworks"
-        port = port_override or (resources / "port")
+        port = port_override or installed_port() or (resources / "port")
         kosmic = frameworks / "libvulkan_kosmickrisp.dylib"
     else:
         wine_root = WINE_DIST
         icd = KOSMIC_DIST / "kosmickrisp_icd.json"
         frameworks = KOSMIC_DIST
-        port = port_override or FALLBACK_PORT
+        port = port_override or installed_port() or FALLBACK_PORT
         kosmic = frameworks / "libvulkan_kosmickrisp.dylib"
     wine = wine_root / "bin/wine"
     missing = [path for path in (wine, wine_root / "bin/wineserver", icd, kosmic, port / "bin/bb-probe.exe")
@@ -346,6 +362,168 @@ def available_games(dump: Path) -> list[tuple[str, str, bool]]:
     return [(key, title, (dump / filename).is_file()) for key, title, filename in GAMES]
 
 
+def installed_port() -> Path | None:
+    if (INSTALLED_PORT / "bin/bb-probe.exe").is_file() and (INSTALLED_PORT / "scripts/prepare.py").is_file():
+        return INSTALLED_PORT
+    return None
+
+
+def port_version(port: Path) -> str:
+    stamp = port / "PORT_VERSION"
+    if stamp.is_file():
+        text = stamp.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            return text
+    return "unknown"
+
+
+def version_key(text: str) -> tuple:
+    numbers = []
+    for part in text.lstrip("vV").split("."):
+        digits = ""
+        for char in part:
+            if char.isdigit():
+                digits += char
+            else:
+                break
+        if not digits:
+            return ()
+        numbers.append(int(digits))
+    return tuple(numbers)
+
+
+def active_port(port_override: Path | None) -> Path:
+    _wine, _icd, _frameworks, _kosmic, port = resolve_engine(port_override)
+    return port
+
+
+def fetch_latest_port() -> tuple[str, str, str]:
+    request = urllib.request.Request(PORT_RELEASE_API, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "uncharted-macos",
+    })
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+    tag = str(payload.get("tag_name") or "").strip()
+    assets = payload.get("assets") or []
+    match = next((asset for asset in assets if asset.get("name") == PORT_ASSET), None)
+    if match is None or not tag or not match.get("browser_download_url"):
+        raise ValueError(f"The latest port release has no {PORT_ASSET}")
+    digest = str(match.get("digest") or "")
+    return tag, str(match["browser_download_url"]), digest
+
+
+def _zip_prefix(archive: zipfile.ZipFile) -> str:
+    names = [name.replace("\\", "/") for name in archive.namelist()]
+    prefixes = []
+    for name in names:
+        if name.endswith("/"):
+            continue
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"The zip has an unsafe path: {name}")
+        if name.endswith("bin/bb-probe.exe"):
+            prefixes.append(name[: -len("bin/bb-probe.exe")])
+    if len(prefixes) != 1:
+        raise ValueError("The zip is not an Uncharted Windows port build")
+    prefix = prefixes[0]
+    if prefix + "scripts/prepare.py" not in names:
+        raise ValueError("The zip has no scripts/prepare.py")
+    return prefix
+
+
+def _copy_zip_tree(archive: zipfile.ZipFile, prefix: str, source: str, destination: Path,
+                   skip: set[str] | None = None) -> None:
+    skip = skip or set()
+    source_prefix = prefix + source.strip("/") + "/"
+    for info in archive.infolist():
+        name = info.filename.replace("\\", "/")
+        if info.is_dir() or not name.startswith(source_prefix):
+            continue
+        relative = Path(name[len(source_prefix):])
+        if not relative.parts or ".." in relative.parts or relative.name in skip:
+            continue
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(info) as incoming, target.open("wb") as outgoing:
+            shutil.copyfileobj(incoming, outgoing)
+
+
+def install_port_zip(zip_path: Path, version: str | None = None, destination: Path | None = None) -> str:
+    destination = destination or INSTALLED_PORT
+    stamp = version.strip() if version else "custom"
+    staging = destination.with_name(destination.name + ".new")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            prefix = _zip_prefix(archive)
+            names = {name.replace("\\", "/") for name in archive.namelist()}
+            _copy_zip_tree(archive, prefix, "bin", staging / "bin", {
+                "bbport_dlss.dll", "nvngx_dlss.dll", "nvngx_dlssg.dll",
+            })
+            _copy_zip_tree(archive, prefix, "scripts", staging / "scripts")
+            if any(name.startswith(prefix + "fsr4_shaders/") for name in names):
+                _copy_zip_tree(archive, prefix, "fsr4_shaders", staging / "fsr4_shaders")
+            _copy_zip_tree(archive, prefix, "licenses", staging / "licenses", {"NVIDIA-DLSS-LICENSE.txt"})
+            for filename in ("LICENSE", "README.txt", "bbport.ini", "input.ini"):
+                member = prefix + filename
+                if member in names:
+                    target = staging / filename
+                    with archive.open(member) as incoming, target.open("wb") as outgoing:
+                        shutil.copyfileobj(incoming, outgoing)
+            covers = staging / "covers"
+            for game in ("u1.jpg", "u2.jpg", "u3.jpg"):
+                member = prefix + "_internal/covers/" + game
+                if member not in names:
+                    continue
+                covers.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as incoming, (covers / game).open("wb") as outgoing:
+                    shutil.copyfileobj(incoming, outgoing)
+        (staging / "PORT_VERSION").write_text(stamp.lstrip("vV") + "\n", encoding="utf-8")
+        previous = destination.with_name(destination.name + ".old")
+        if previous.exists():
+            shutil.rmtree(previous)
+        if destination.exists():
+            destination.rename(previous)
+        staging.rename(destination)
+        if previous.exists():
+            shutil.rmtree(previous)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return stamp.lstrip("vV")
+
+
+def download_port(destination: Path | None = None) -> str:
+    tag, url, _digest = fetch_latest_port()
+    print(f"status Downloading Windows port {tag}", flush=True)
+    request = urllib.request.Request(url, headers={"User-Agent": "uncharted-macos"})
+    with tempfile.TemporaryDirectory(prefix="uncharted-port-") as folder:
+        archive = Path(folder) / PORT_ASSET
+        with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as output:
+            total = int(response.headers.get("Content-Length") or 0)
+            received = 0
+            reported = -1
+            while True:
+                chunk = response.read(1 << 20)
+                if not chunk:
+                    break
+                output.write(chunk)
+                received += len(chunk)
+                if total:
+                    percent = received * 100 // total
+                    if percent != reported:
+                        reported = percent
+                        print(f"progress {percent}", flush=True)
+        print("status Installing the Windows port", flush=True)
+        installed = install_port_zip(archive, tag, destination)
+    print(f"installed {installed}", flush=True)
+    return installed
+
+
 def recorded_exit(prefix: Path, process_code: int) -> int:
     log = prefix / "drive_c/uncharted-out.txt"
     if not log.is_file():
@@ -436,10 +614,33 @@ def main() -> int:
     parser.add_argument("--metal-hud", action="store_true", help="Show the Metal performance HUD")
     parser.add_argument("--list", action="store_true", help="Print which games are in the dump")
     parser.add_argument("--check", action="store_true", help="Create the Wine prefix and print the engine")
+    parser.add_argument("--check-port", action="store_true",
+                        help="Print the installed Windows port and the latest release")
+    parser.add_argument("--download-port", action="store_true",
+                        help="Download the latest Windows port and install it")
+    parser.add_argument("--install-port", type=Path, default=None,
+                        help="Install a downloaded uncharted-windows.zip")
+    parser.add_argument("--port-version", default=None,
+                        help="Version stamp to write when installing a zip")
     args = parser.parse_args()
     try:
         if args.check:
             return check_engine(args.port.expanduser().resolve() if args.port else None)
+        if args.check_port or args.download_port or args.install_port:
+            override = args.port.expanduser().resolve() if args.port else None
+            if args.download_port:
+                download_port()
+                return 0
+            if args.install_port:
+                installed = install_port_zip(args.install_port.expanduser().resolve(), args.port_version)
+                print(f"installed {installed}")
+                return 0
+            current = port_version(active_port(override))
+            tag, url, _digest = fetch_latest_port()
+            latest = tag.lstrip("vV")
+            newer = version_key(latest) > version_key(current)
+            print(f"{current}\t{latest}\t{url if newer else ''}")
+            return 0
         if args.dump is None:
             args.dump = FALLBACK_PORT / "CUSA02343"
         dump = args.dump.expanduser().resolve()

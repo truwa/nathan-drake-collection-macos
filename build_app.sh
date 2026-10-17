@@ -39,6 +39,7 @@ fi
 cp "$PORT_SRC/LICENSE" "$PORT_SRC/README.txt" "$PORT_SRC/bbport.ini" "$PORT_SRC/input.ini" \
     "$APP/Contents/Resources/port/"
 rsync -a --exclude 'NVIDIA-DLSS-LICENSE.txt' "$PORT_SRC/licenses/" "$APP/Contents/Resources/port/licenses/"
+printf '%s\n' "${PORT_VERSION:-0.3.3}" > "$APP/Contents/Resources/port/PORT_VERSION"
 mkdir -p "$APP/Contents/Resources/covers"
 if [[ -d "$PORT_SRC/_internal/covers" ]]; then
     cp "$PORT_SRC/_internal/covers/u1.jpg" "$PORT_SRC/_internal/covers/u2.jpg" \
@@ -88,7 +89,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1</string>
+    <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
