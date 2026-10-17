@@ -179,7 +179,8 @@ def resolve_engine(port_override: Path | None):
     return wine_root, icd, frameworks, kosmic, port
 
 
-def wine_environment(prefix: Path, icd: Path, frameworks: Path, kosmic: Path, wine_root: Path) -> dict:
+def wine_environment(prefix: Path, icd: Path, frameworks: Path, kosmic: Path, wine_root: Path,
+                     metal_hud: bool = False) -> dict:
     environment = os.environ.copy()
     for inherited in ("WINEPREFIX", "WINEDEBUG", "WINEDLLOVERRIDES", "WINEDLLPATH",
                       "WINEMSYNC", "SikarugirAppWine11", "CX_FWD_COMPAT_GL_CTX"):
@@ -200,6 +201,10 @@ def wine_environment(prefix: Path, icd: Path, frameworks: Path, kosmic: Path, wi
         str(wine_root / "lib"), str(frameworks), "/usr/lib", "/usr/libexec", "/usr/lib/system"))
     environment["PATH"] = str(wine_root / "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin"
     environment.pop("MTL_HUD_ENABLED", None)
+    environment.pop("METAL_HUD", None)
+    if metal_hud:
+        environment["MTL_HUD_ENABLED"] = "1"
+        environment["METAL_HUD"] = "1"
     return environment
 
 
@@ -299,7 +304,7 @@ def prepare_image(port: Path, game: Path, filename: str) -> Path:
 
 
 def write_bat(prefix: Path, game: Path, filename: str, probe: Path, image: Path,
-              config: Path, controls: Path, guest_argv: Path | None) -> None:
+              config: Path, controls: Path, guest_argv: Path | None, fullscreen: bool) -> None:
     user = SUPPORT / "user"
     user.mkdir(parents=True, exist_ok=True)
     drive = prefix / "drive_c"
@@ -327,6 +332,7 @@ def write_bat(prefix: Path, game: Path, filename: str, probe: Path, image: Path,
         "set BB_UPSCALE_BEFORE_CS=aec539f0",
         "set BB_HUDLESS_PS=484cdbf5",
         "set BB_TIMEOUT=0",
+        "set BB_FULLSCREEN=1" if fullscreen else "set BB_FULLSCREEN=0",
         (f"\"{windows_path(probe)}\" \"{windows_path(image / 'boot-linked.bin')}\" "
          f"--content-profile \"{windows_path(image / 'content.bin')}\" "
          f"--app0 \"{windows_path(game)}\" --user \"{windows_path(user)}\" --timeout 0"
@@ -353,7 +359,7 @@ def recorded_exit(prefix: Path, process_code: int) -> int:
     return process_code
 
 
-def launch(dump: Path, exe: str, port_override: Path | None) -> int:
+def launch(dump: Path, exe: str, port_override: Path | None, fullscreen: bool, metal_hud: bool) -> int:
     _title, filename = game_table()[exe]
     if not (dump / "eboot.bin").is_file():
         raise FileNotFoundError(f"No eboot.bin in {dump}")
@@ -364,7 +370,7 @@ def launch(dump: Path, exe: str, port_override: Path | None) -> int:
         raise FileNotFoundError(f"No prepare.py in {port / 'scripts'}")
     SUPPORT.mkdir(parents=True, exist_ok=True)
     prefix = SUPPORT / "prefix"
-    environment = wine_environment(prefix, icd, frameworks, kosmic, wine_root)
+    environment = wine_environment(prefix, icd, frameworks, kosmic, wine_root, metal_hud)
     wine = wine_root / "bin/wine"
     wineserver = wine_root / "bin/wineserver"
 
@@ -387,7 +393,7 @@ def launch(dump: Path, exe: str, port_override: Path | None) -> int:
         image = prepare_image(port, dump, filename)
         loadexec = SUPPORT / "out" / "loadexec.txt"
         loadexec.unlink(missing_ok=True)
-        write_bat(prefix, dump, filename, probe, image, config, controls, guest_argv)
+        write_bat(prefix, dump, filename, probe, image, config, controls, guest_argv, fullscreen)
         subprocess.run([str(wineserver), "-k"], env=environment, check=False)
         completed = subprocess.run([str(wine), "cmd", "/c", r"C:\uncharted-launch.bat"], env=environment)
         code = recorded_exit(prefix, completed.returncode)
@@ -425,6 +431,9 @@ def main() -> int:
                         help="Port runtime folder (default: the copy inside the app)")
     parser.add_argument("--exe", default="u1", choices=tuple(key for key, _title, _name in GAMES),
                         help="Which game to start")
+    parser.add_argument("--display", default="window", choices=("window", "fullscreen"),
+                        help="Start in a window or full screen")
+    parser.add_argument("--metal-hud", action="store_true", help="Show the Metal performance HUD")
     parser.add_argument("--list", action="store_true", help="Print which games are in the dump")
     parser.add_argument("--check", action="store_true", help="Create the Wine prefix and print the engine")
     args = parser.parse_args()
@@ -439,7 +448,7 @@ def main() -> int:
                 print(f"{key}\t{title}\t{'yes' if present else 'no'}")
             return 0
         port = args.port.expanduser().resolve() if args.port else None
-        return launch(dump, args.exe, port)
+        return launch(dump, args.exe, port, args.display == "fullscreen", args.metal_hud)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Cannot launch: {error}", file=sys.stderr)
         return 1

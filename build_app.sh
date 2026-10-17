@@ -39,6 +39,11 @@ fi
 cp "$PORT_SRC/LICENSE" "$PORT_SRC/README.txt" "$PORT_SRC/bbport.ini" "$PORT_SRC/input.ini" \
     "$APP/Contents/Resources/port/"
 rsync -a --exclude 'NVIDIA-DLSS-LICENSE.txt' "$PORT_SRC/licenses/" "$APP/Contents/Resources/port/licenses/"
+mkdir -p "$APP/Contents/Resources/covers"
+if [[ -d "$PORT_SRC/_internal/covers" ]]; then
+    cp "$PORT_SRC/_internal/covers/u1.jpg" "$PORT_SRC/_internal/covers/u2.jpg" \
+        "$PORT_SRC/_internal/covers/u3.jpg" "$APP/Contents/Resources/covers/"
+fi
 
 cp "$ROOT/launch.py" "$ROOT/patch_probe.py" "$ROOT/tls_adapter.c" \
     "$ROOT/uncharted-crossover-tls.dll" "$ROOT/NOTICES.txt" \
@@ -76,8 +81,10 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <string>com.uncharted.macos</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nathan Drake Collection</string>
     <key>CFBundleName</key>
-    <string>Uncharted</string>
+    <string>Nathan Drake Collection</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

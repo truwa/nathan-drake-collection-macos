@@ -18,6 +18,7 @@ final class LauncherModel: ObservableObject {
     @Published var status = "Choose the folder that contains the game dump."
     @Published var log = ""
     @Published var running = false
+    @Published var runningGame: String?
 
     private var dumpURL: URL?
     private var gameProcess: Process?
@@ -62,14 +63,19 @@ final class LauncherModel: ObservableObject {
         UserDefaults.standard.set(url.path, forKey: "dumpPath")
     }
 
-    func play(_ game: GameRow) {
+    func play(_ game: GameRow, display: String, metalHud: Bool) {
         guard let dumpURL, game.available, !running else { return }
         running = true
+        runningGame = game.title
         status = "Starting \(game.title)…"
         log = ""
         let process = Process()
         process.executableURL = pythonURL
-        process.arguments = [launcherURL.path, "--dump", dumpURL.path, "--exe", game.id]
+        var arguments = [launcherURL.path, "--dump", dumpURL.path, "--exe", game.id, "--display", display]
+        if metalHud {
+            arguments.append("--metal-hud")
+        }
+        process.arguments = arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -78,6 +84,7 @@ final class LauncherModel: ObservableObject {
                 guard let self else { return }
                 self.logTimer?.invalidate()
                 self.running = false
+                self.runningGame = nil
                 self.gameProcess = nil
                 self.status = ended.terminationStatus == 0 ? "\(game.title) closed." : "\(game.title) stopped (\(ended.terminationStatus))."
             }
@@ -100,15 +107,6 @@ final class LauncherModel: ObservableObject {
     func stop() {
         logTimer?.invalidate()
         gameProcess?.terminate()
-    }
-
-    func showLicenses() {
-        let notices = resources.appendingPathComponent("NOTICES.txt")
-        if FileManager.default.fileExists(atPath: notices.path) {
-            NSWorkspace.shared.open(notices)
-            return
-        }
-        status = "License notices are beside the app sources (NOTICES.txt)."
     }
 
     private func adopt(_ url: URL) {
@@ -185,12 +183,169 @@ final class LauncherModel: ObservableObject {
     }
 }
 
-struct ContentView: View {
-    @StateObject private var model = LauncherModel()
+private struct CreditEntry: Identifiable {
+    let id = UUID()
+    let text: String
+    var url: URL?
+}
+
+private struct CreditBlock: Identifiable {
+    let id = UUID()
+    let heading: String
+    let lines: [CreditEntry]
+}
+
+private let creditBlocks: [CreditBlock] = [
+    CreditBlock(heading: "Nathan Drake Collection", lines: [
+        CreditEntry(text: "Drake's Fortune"),
+        CreditEntry(text: "Among Thieves"),
+        CreditEntry(text: "Drake's Deception"),
+        CreditEntry(text: "A launcher for the PS4 games"),
+        CreditEntry(text: "through the Windows port, under Wine"),
+        CreditEntry(text: "The games are not included"),
+    ]),
+    CreditBlock(heading: "The games", lines: [
+        CreditEntry(text: "Naughty Dog"),
+        CreditEntry(text: "Sony Interactive Entertainment"),
+    ]),
+    CreditBlock(heading: "Windows port", lines: [
+        CreditEntry(text: "GPL-2.0"),
+        CreditEntry(text: "github.com/Supermedo/uncharted_pc", url: URL(string: "https://github.com/Supermedo/uncharted_pc")),
+    ]),
+    CreditBlock(heading: "Wine 11.18", lines: [
+        CreditEntry(text: "LGPL-2.1-or-later"),
+        CreditEntry(text: "gitlab.winehq.org/wine/wine", url: URL(string: "https://gitlab.winehq.org/wine/wine/-/releases/wine-11.18")),
+        CreditEntry(text: "macOS build by Gcenx", url: URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/tag/11.18")),
+    ]),
+    CreditBlock(heading: "KosmicKrisp", lines: [
+        CreditEntry(text: "Mesa 26.3.0-devel"),
+        CreditEntry(text: "MIT"),
+        CreditEntry(text: "docs.mesa3d.org", url: URL(string: "https://docs.mesa3d.org/drivers/kosmickrisp.html")),
+    ]),
+    CreditBlock(heading: "This launcher", lines: [
+        CreditEntry(text: "Mac changes are applied at launch"),
+        CreditEntry(text: "NVIDIA DLSS is not included"),
+    ]),
+]
+
+private struct CreditsRoll: View {
+    var onClose: () -> Void
+    @State private var accumulated: TimeInterval = 0
+    @State private var segmentStart = Date()
+    @State private var paused = false
+    @State private var contentHeight: CGFloat = 900
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Runs the Uncharted Windows port under Wine.")
+        ZStack {
+            Color.black.ignoresSafeArea()
+            GeometryReader { geo in
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let elapsed = accumulated + (paused ? 0 : timeline.date.timeIntervalSince(segmentStart))
+                    let travel = geo.size.height + contentHeight
+                    let cycle = travel > 1 ? CGFloat(elapsed * 36).truncatingRemainder(dividingBy: travel) : 0
+                    credits
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: RollHeight.self, value: proxy.size.height)
+                        })
+                        .frame(maxWidth: .infinity)
+                        .offset(y: geo.size.height - cycle)
+                }
+            }
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.14),
+                        .init(color: .black, location: 0.86),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            VStack {
+                HStack {
+                    Spacer()
+                    Button("Close", action: onClose)
+                        .keyboardShortcut(.cancelAction)
+                }
+                Spacer()
+            }
+            .padding(16)
+        }
+        .onPreferenceChange(RollHeight.self) { contentHeight = $0 }
+        .onHover { inside in
+            let now = Date()
+            if inside, !paused {
+                accumulated += now.timeIntervalSince(segmentStart)
+                paused = true
+            } else if !inside, paused {
+                segmentStart = now
+                paused = false
+            }
+        }
+    }
+
+    private var credits: some View {
+        VStack(spacing: 48) {
+            ForEach(creditBlocks) { block in
+                VStack(spacing: 8) {
+                    Text(block.heading)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    ForEach(block.lines) { line in
+                        if let url = line.url {
+                            Link(line.text, destination: url)
+                                .underline()
+                        } else {
+                            Text(line.text)
+                        }
+                    }
+                    .font(.body)
+                }
+                .multilineTextAlignment(.center)
+            }
+        }
+        .foregroundStyle(Color(white: 0.92))
+        .padding(.horizontal, 40)
+        .frame(maxWidth: 520)
+    }
+}
+
+private struct RollHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 900
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var model = LauncherModel()
+    @State private var showCredits = false
+    @AppStorage("displayMode") private var displayMode = "window"
+    @AppStorage("showLog") private var showLog = false
+    @AppStorage("metalHud") private var metalHud = false
+
+    private func cover(_ id: String) -> some View {
+        let url = Bundle.main.resourceURL?.appendingPathComponent("covers/\(id).jpg")
+        let image = url.flatMap { NSImage(contentsOf: $0) }
+        return Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Color(nsColor: .quaternaryLabelColor)
+            }
+        }
+        .frame(width: 168, height: 94)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    var body: some View {
+        ZStack {
+            VStack(alignment: .leading, spacing: 16) {
+            Text("The PS4 Nathan Drake Collection, through the Windows port.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack {
@@ -201,30 +356,61 @@ struct ContentView: View {
                 Button("Choose Folder…", action: model.chooseFolder)
             }
             ForEach(model.games) { game in
-                HStack {
+                HStack(spacing: 12) {
+                    cover(game.id)
+                        .opacity(game.available ? 1 : 0.35)
                     Text(game.title)
                     Spacer()
-                    Button("Play") { model.play(game) }
+                    Button("Play") { model.play(game, display: displayMode, metalHud: metalHud) }
                         .disabled(!game.available || model.running)
                 }
             }
-            Text(model.status)
-            ScrollView {
-                Text(model.log.isEmpty ? " " : model.log)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .background(Color(nsColor: .textBackgroundColor))
             HStack {
-                if model.running {
-                    Button("Stop", action: model.stop)
+                Picker("Display", selection: $displayMode) {
+                    Text("Window").tag("window")
+                    Text("Full Screen").tag("fullscreen")
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 280)
                 Spacer()
-                Button("Licenses") { model.showLicenses() }
+                Button(model.runningGame.map { "Stop \($0)" } ?? "Stop", action: model.stop)
+                    .disabled(!model.running)
+            }
+            HStack(spacing: 20) {
+                Toggle("Show log", isOn: $showLog)
+                Toggle("Metal HUD", isOn: $metalHud)
+                    .disabled(model.running)
+            }
+            Text("L3 + R3 opens the port menu.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text(model.status)
+            if showLog {
+                ScrollView {
+                    Text(model.log.isEmpty ? "No log yet." : model.log)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(model.log.isEmpty ? .secondary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .textSelection(.enabled)
+                }
+                .frame(height: 180)
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+            }
+            HStack {
+                Spacer()
+                Button("Credits & Licenses") { showCredits = true }
+            }
+            }
+            .padding(20)
+            if showCredits {
+                CreditsRoll { showCredits = false }
             }
         }
-        .padding(20)
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 720, minHeight: 680)
         .onAppear { model.restore() }
     }
 }
@@ -232,7 +418,7 @@ struct ContentView: View {
 @main
 struct UnchartedApp: App {
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Nathan Drake Collection") {
             ContentView()
         }
     }
