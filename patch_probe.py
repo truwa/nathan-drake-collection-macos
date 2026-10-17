@@ -59,6 +59,7 @@ def patch(source: Path, destination: Path) -> None:
     _enlarge_record_chunks(data)
     _translate_menu(data)
     _coalesce_depth_sync(data)
+    _round_arena_binds(data)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_bytes(data)
@@ -487,6 +488,70 @@ def _coalesce_depth_sync(data: bytearray) -> None:
     if any(byte not in (0x00, 0xCC) for byte in data[file_at:file_at + len(cave)]):
         raise ValueError("depth-sync cave overlaps existing code")
     data[file_at:file_at + len(cave)] = cave
+
+
+# EnsureResident binds whatever 16 KB blocks one request touches. On KosmicKrisp
+# each bind becomes a Metal 4 sparse mapping update on the graphics queue, about
+# two thousand of them by the bar fight in Drake's Deception. Rounding the
+# request out to this granule, inside the arena, leaves a few dozen, almost all
+# while loading.
+BIND_GRANULE = 64 << 20
+
+
+def _round_arena_binds(data: bytearray) -> None:
+    """Widen EnsureResident(buffer, first, last) to whole granules.
+
+    The blocks are guest addresses shifted by the block size at
+    BufferCache+0x3A80. The buffer holds its guest base at +0 and its size at
+    +8, so the widened range is clamped to that arena. Only the GPU backing
+    and page table change; guest data is still uploaded when it is used.
+    """
+    image = 0x140000000
+    text_va, text_raw = 0x1000, 0x400
+    site_va, resume_va = 0x140208A73, 0x140208A79
+    site_file = text_raw + (site_va - image - text_va)
+    site = bytes(data[site_file:site_file + 6])
+    if site != bytes.fromhex("49ffc14d39c8"):
+        raise ValueError(f"EnsureResident range check does not match this probe ({site.hex()})")
+
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    opt = struct.unpack_from("<H", data, pe + 20)[0]
+    section = pe + 24 + opt
+    vsize = struct.unpack_from("<I", data, section + 8)[0]
+    cave_rva = text_va + align(vsize, 16)
+    cave_va = image + cave_rva
+    cave = bytearray(bytes.fromhex(
+        "4c8b12"          # mov r10, [rdx]            arena base
+        "4c8b5a08"        # mov r11, [rdx+8]          arena size
+        "4d01d3"          # add r11, r10
+        "49ffcb"          # dec r11
+        "0fb68e803a0000"  # movzx ecx, byte [rsi+0x3a80]
+        "49d3ea"          # shr r10, cl
+        "49d3eb"          # shr r11, cl
+        "b8") + struct.pack("<I", BIND_GRANULE) + bytes.fromhex(
+        "48d3e8"          # shr rax, cl
+        "48ffc8"          # dec rax                   granule mask
+        "4889c1"          # mov rcx, rax
+        "48f7d1"          # not rcx
+        "4921c8"          # and r8, rcx
+        "4d39d0"          # cmp r8, r10
+        "4d0f42c2"        # cmovb r8, r10
+        "4909c1"          # or r9, rax
+        "4d39d9"          # cmp r9, r11
+        "4d0f47cb"        # cmova r9, r11
+        "4889f1"          # mov rcx, rsi
+        "49ffc1"          # inc r9
+        "4d39c8"          # cmp r8, r9
+        "e9"))
+    cave += struct.pack("<i", resume_va - (cave_va + len(cave) + 4))
+    if cave_rva - text_va + len(cave) > 0x53A600:
+        raise ValueError("arena-bind cave does not fit in the text section")
+    file_at = text_raw + cave_rva - text_va
+    if any(byte not in (0x00, 0xCC) for byte in data[file_at:file_at + len(cave)]):
+        raise ValueError("arena-bind cave overlaps existing code")
+    data[file_at:file_at + len(cave)] = cave
+    data[site_file:site_file + 6] = b"\xe9" + struct.pack("<i", cave_va - (site_va + 5)) + b"\x90"
+    struct.pack_into("<I", data, section + 8, cave_rva - text_va + len(cave))
 
 
 def _translate_menu(data: bytearray) -> None:
