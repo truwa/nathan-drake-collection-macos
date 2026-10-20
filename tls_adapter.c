@@ -7,8 +7,8 @@
 #include <windows.h>
 #include <stdint.h>
 
-#define TLS_SLOT_RVA 0x00cec320u
-#define LOW_MAP_RVA  0x00010110u
+#define TLS_SLOT_RVA 0x00cf2320u
+#define LOW_MAP_RVA  0x0001155fu
 
 typedef struct {
     uint64_t address;

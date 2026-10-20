@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/dist/Uncharted.app"
 KOSMIC_SRC="${KOSMIC_SRC:-$ROOT/dist/upstream/kosmickrisp-x86_64}"
-PORT_SRC="${PORT_SRC:-/Volumes/S990PRO/uncharted-windows}"
+PORT_SRC="${PORT_SRC:-$ROOT/dist/port-0.3.6/uncharted-windows}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" \
@@ -27,10 +27,17 @@ rsync -a "$PORT_SRC/scripts/" "$APP/Contents/Resources/port/scripts/"
 if [[ -d "$PORT_SRC/fsr4_shaders" ]]; then
     rsync -a "$PORT_SRC/fsr4_shaders/" "$APP/Contents/Resources/port/fsr4_shaders/"
 fi
-cp "$PORT_SRC/LICENSE" "$PORT_SRC/README.txt" "$PORT_SRC/bbport.ini" "$PORT_SRC/input.ini" \
-    "$APP/Contents/Resources/port/"
+cp "$PORT_SRC/LICENSE" "$PORT_SRC/README.txt" "$APP/Contents/Resources/port/"
+# 0.3.6 no longer ships these. A first launch still wants a starting bbport.ini.
+for settings in bbport.ini input.ini; do
+    if [[ -f "$PORT_SRC/$settings" ]]; then
+        cp "$PORT_SRC/$settings" "$APP/Contents/Resources/port/"
+    elif [[ -f "$ROOT/defaults/$settings" ]]; then
+        cp "$ROOT/defaults/$settings" "$APP/Contents/Resources/port/"
+    fi
+done
 rsync -a --exclude 'NVIDIA-DLSS-LICENSE.txt' "$PORT_SRC/licenses/" "$APP/Contents/Resources/port/licenses/"
-printf '%s\n' "${PORT_VERSION:-0.3.3}" > "$APP/Contents/Resources/port/PORT_VERSION"
+printf '%s\n' "${PORT_VERSION:-0.3.6}" > "$APP/Contents/Resources/port/PORT_VERSION"
 mkdir -p "$APP/Contents/Resources/covers"
 if [[ -d "$PORT_SRC/_internal/covers" ]]; then
     cp "$PORT_SRC/_internal/covers/u1.jpg" "$PORT_SRC/_internal/covers/u2.jpg" \
@@ -58,7 +65,8 @@ rsync -a "$PYTHON_DIR/" "$APP/Contents/Resources/python/"
 
 swiftc -parse-as-library -O -o "$APP/Contents/MacOS/Uncharted" \
     -framework SwiftUI -framework AppKit \
-    "$ROOT/macos/UnchartedApp.swift"
+    "$ROOT/macos/UnchartedApp.swift" \
+    "$ROOT/macos/AppUpdate.swift"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>

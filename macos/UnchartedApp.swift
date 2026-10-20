@@ -253,93 +253,10 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    func checkApp() {
-        guard !updating else { return }
-        updating = true
-        let current = Self.appVersion
-        Task {
-            let result = await Self.latestAppRelease()
-            updating = false
-            let alert = NSAlert()
-            switch result {
-            case .failure:
-                alert.alertStyle = .warning
-                alert.messageText = "Could not check for an app update."
-                alert.informativeText = "The launcher's release page did not answer."
-                alert.runModal()
-            case .success(let release) where Self.isNewer(Self.versionKey(release.tag), than: Self.versionKey(current)):
-                alert.alertStyle = .informational
-                alert.messageText = "Launcher \(Self.displayVersion(release.tag)) is available."
-                alert.informativeText = "This copy is \(current)."
-                alert.addButton(withTitle: "Open Release Page")
-                alert.addButton(withTitle: "OK")
-                if alert.runModal() == .alertFirstButtonReturn, let page = release.page {
-                    NSWorkspace.shared.open(page)
-                }
-            case .success:
-                alert.alertStyle = .informational
-                alert.messageText = "The launcher is up to date."
-                alert.informativeText = "This copy is \(current)."
-                alert.runModal()
-            }
-        }
-    }
-
     func openSaveFolder() {
         let folder = SupportFolder.url.appendingPathComponent("user", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(folder)
-    }
-
-    private struct AppRelease {
-        var tag: String
-        var page: URL?
-    }
-
-    private static func latestAppRelease() async -> Result<AppRelease, Error> {
-        guard let endpoint = URL(string: "https://api.github.com/repos/truwa/uncharted-trilogy-macos/releases/latest") else {
-            return .failure(URLError(.badURL))
-        }
-        var request = URLRequest(url: endpoint, timeoutInterval: 30)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("uncharted-macos", forHTTPHeaderField: "User-Agent")
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tag = (json["tag_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !tag.isEmpty else {
-                return .failure(URLError(.badServerResponse))
-            }
-            let page = (json["html_url"] as? String).flatMap(URL.init(string:))
-            return .success(AppRelease(tag: tag, page: page))
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    private static func versionKey(_ text: String) -> [Int] {
-        text.drop(while: { $0 == "v" || $0 == "V" }).split(separator: ".").compactMap { part in
-            let digits = part.prefix(while: \.isNumber)
-            return Int(digits)
-        }
-    }
-
-    private static func isNewer(_ latest: [Int], than current: [Int]) -> Bool {
-        guard !latest.isEmpty else { return false }
-        let count = max(latest.count, current.count)
-        for index in 0..<count {
-            let left = index < latest.count ? latest[index] : 0
-            let right = index < current.count ? current[index] : 0
-            if left != right { return left > right }
-        }
-        return false
-    }
-
-    private static func displayVersion(_ tag: String) -> String {
-        var text = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.first == "v" || text.first == "V" { text.removeFirst() }
-        return text
     }
 
     private var wineInstalled: Bool {
@@ -814,6 +731,7 @@ private final class LineBuffer: @unchecked Sendable {
 
 struct ContentView: View {
     @EnvironmentObject private var model: LauncherModel
+    @EnvironmentObject private var updates: AppUpdateModel
     @AppStorage("displayMode") private var displayMode = "window"
     @AppStorage("showLog") private var showLog = false
     @AppStorage("metalHud") private var metalHud = false
@@ -917,7 +835,7 @@ struct ContentView: View {
                             model.play(game, display: displayMode, metalHud: metalHud)
                         }
                     }
-                    .disabled(model.updating || (model.runningGameID != game.id && (!game.available || model.running)))
+                    .disabled(model.updating || updates.busy || (model.runningGameID != game.id && (!game.available || model.running)))
                 }
             }
             Text("Insert, Left Shift + V, or L3 + R3 opens the port menu while in the game.")
@@ -996,6 +914,8 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button("Check for Updates") { updates.check() }
+                    .disabled(model.updating || model.running || updates.busy)
                 Button("Credits & Licenses") { model.showCredits = true }
             }
             }
@@ -1060,17 +980,30 @@ struct ContentView: View {
 @main
 struct UnchartedApp: App {
     @StateObject private var model = LauncherModel()
+    @StateObject private var updates = AppUpdateModel()
 
     var body: some Scene {
         WindowGroup("Nathan Drake Collection") {
             ContentView()
                 .environmentObject(model)
+                .environmentObject(updates)
+                .onAppear {
+                    updates.blockReason = {
+                        if model.running {
+                            return "Stop the game before updating the launcher."
+                        }
+                        if model.updating {
+                            return "Wait until the current task finishes."
+                        }
+                        return nil
+                    }
+                }
         }
         .defaultSize(width: 760, height: 640)
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Check App Updates") { model.checkApp() }
-                    .disabled(model.updating)
+                Button("Check for Updates") { updates.check() }
+                    .disabled(model.updating || model.running || updates.busy)
                 Button("Check for Windows Port Updates") { model.checkPort() }
                     .disabled(model.running || model.updating)
                 Button("Open Game Save Folder") { model.openSaveFolder() }
