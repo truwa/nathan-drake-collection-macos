@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 
-private let bundleIdentifier = "com.uncharted.macos"
+private let bundleIdentifier = "com.macgametest.nathandrakecollection"
 private let releaseAPI = URL(string: "https://api.github.com/repos/truwa/uncharted-trilogy-macos/releases/latest")!
 
 private struct SemanticVersion: Comparable, Equatable {
@@ -281,7 +281,7 @@ private enum UpdateFeed {
         guard let host = url.host?.lowercased(), host == "github.com" || host == "api.github.com" else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "uncharted-launcher-update",
+            kSecAttrService as String: "nathandrakecollection-update",
             kSecAttrAccount as String: "github",
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
@@ -717,7 +717,7 @@ final class AppUpdateModel: ObservableObject {
 
     private func makeWork() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("uncharted-update-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ndc-update-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -837,7 +837,7 @@ final class AppUpdateModel: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [
             "-c",
-            "mkdir -p \"$HOME/Library/Application Support/Nathan Drake Collection\" && nohup /bin/bash \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" >>\"$HOME/Library/Application Support/Nathan Drake Collection/update.log\" 2>&1 &",
+            "mkdir -p \"$HOME/Library/Application Support/NathanDrakeCollection\" && nohup /bin/bash \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" >>\"$HOME/Library/Application Support/NathanDrakeCollection/update.log\" 2>&1 &",
             "bash",
             script.path,
             String(pid),
@@ -868,7 +868,7 @@ PID="$1"
 DEST="$2"
 NEW="$3"
 WORK="$4"
-LOG="$HOME/Library/Application Support/Nathan Drake Collection/update.log"
+LOG="$HOME/Library/Application Support/NathanDrakeCollection/update.log"
 mkdir -p "$(dirname "$LOG")"
 say() { printf '%s\\n' "$*" >>"$LOG"; }
 

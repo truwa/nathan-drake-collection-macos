@@ -1,26 +1,22 @@
-Uncharted for Mac
-=================
+Nathan Drake Collection for Mac
+================================
 
-This app runs the Uncharted Windows port under Wine. It is not a native Mac
-port. The game itself is not included. You choose the folder that contains
-your own decrypted dump (eboot.bin, big2-ps4_Shipping.elf, big3-ps4_Shipping.elf).
+This app starts the BilalReloaded PC port of Uncharted: The Nathan Drake
+Collection on Apple Silicon, through Rosetta 2 and KosmicKrisp. It is not a
+Sony, Naughty Dog or Bluepoint product. The games are not included. You choose
+the folder that contains your own decrypted dump (eboot.bin, sce_sys, u1data,
+u2data, u3data) and, if you dumped it separately, the 1.02 update folder.
 
-Wine
-  LGPL-2.1-or-later
-  https://gitlab.winehq.org/wine/wine
-  The macOS build by Gcenx is downloaded the first time the launcher opens.
-  https://github.com/Gcenx/macOS_Wine_builds/releases/latest
+PC port
+  BilalReloaded
+  https://github.com/bc160201983
+  Lineage from SuperMedo's Bloodborne / Uncharted work
+  https://github.com/Supermedo/uncharted_pc
 
 KosmicKrisp
-  MIT, part of Mesa 26.3.0-devel (git-063dfaeec5)
+  MIT, part of Mesa
   https://docs.mesa3d.org/drivers/kosmickrisp.html
-  This is the x86-64 build of the Vulkan SDK 1.4.363.0 driver. Wine runs as
-  x86-64, so the arm64 build of that SDK cannot be loaded.
 
-Uncharted Windows port
-  Original port by SuperMedo
-  GPL-2.0
-  https://github.com/Supermedo/uncharted_pc
-  The port's LICENSE file and the notices in licenses/ are included.
-  Mac changes to the port runtime are applied at launch from source in this
-  project (patch_probe.py and tls_adapter.c).
+This launcher
+  MacGameTest
+  https://www.youtube.com/@MacGameTest

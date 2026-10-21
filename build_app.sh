@@ -1,53 +1,27 @@
 #!/bin/bash
-# Assemble dist/Uncharted.app from the Wine engine, KosmicKrisp, and the port runtime.
+# Assemble dist/NathanDrakeCollection.app for the BilalReloaded native Mac runtime.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-APP="$ROOT/dist/Uncharted.app"
-KOSMIC_SRC="${KOSMIC_SRC:-$ROOT/dist/upstream/kosmickrisp-x86_64}"
-PORT_SRC="${PORT_SRC:-$ROOT/dist/port-0.3.6/uncharted-windows}"
+APP="$ROOT/dist/NathanDrakeCollection.app"
+NATIVE_SRC="${NATIVE_SRC:-$(cd "$ROOT/../uncharted-bilal-work/bilal" && pwd)}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" \
     "$APP/Contents/Resources/engine" \
-    "$APP/Contents/Resources/vulkan/icd.d" \
-    "$APP/Contents/Resources/port/licenses" \
-    "$APP/Contents/Frameworks"
+    "$APP/Contents/Resources/covers"
 
-cp "$KOSMIC_SRC/libvulkan_kosmickrisp.dylib" "$APP/Contents/Frameworks/"
-cp "$KOSMIC_SRC/kosmickrisp_icd.json" "$APP/Contents/Resources/vulkan/icd.d/"
+cp "$ROOT/macos/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/macos/covers/u1.jpg" "$ROOT/macos/covers/u2.jpg" "$ROOT/macos/covers/u3.jpg" \
+    "$APP/Contents/Resources/covers/"
+cp "$ROOT/launch.py" "$ROOT/NOTICES.txt" "$APP/Contents/Resources/engine/"
+cp "$ROOT/NOTICES.txt" "$ROOT/README-macOS.txt" "$APP/Contents/Resources/"
 
-rsync -a \
-    --exclude 'bbport_dlss.dll' \
-    --exclude 'nvngx_dlss.dll' \
-    --exclude 'nvngx_dlssg.dll' \
-    --exclude 'bb-probe-macos.exe' \
-    --exclude 'bb-probe-macos.exe.*' \
-    "$PORT_SRC/bin/" "$APP/Contents/Resources/port/bin/"
-rsync -a "$PORT_SRC/scripts/" "$APP/Contents/Resources/port/scripts/"
-if [[ -d "$PORT_SRC/fsr4_shaders" ]]; then
-    rsync -a "$PORT_SRC/fsr4_shaders/" "$APP/Contents/Resources/port/fsr4_shaders/"
+if [[ -x "$NATIVE_SRC/gow3_pc/out/gow3-probe" && -f "$NATIVE_SRC/tools/probe_uncharted.py" ]]; then
+    mkdir -p "$APP/Contents/Resources/native/gow3_pc/out" "$APP/Contents/Resources/native/tools"
+    # Local builds keep the probe in the Bilal checkout so rpaths and KosmicKrisp
+    # stay valid. The app records that path for Play.
+    printf '%s\n' "$NATIVE_SRC" > "$APP/Contents/Resources/native-root.txt"
 fi
-cp "$PORT_SRC/LICENSE" "$PORT_SRC/README.txt" "$APP/Contents/Resources/port/"
-# 0.3.6 no longer ships these. A first launch still wants a starting bbport.ini.
-for settings in bbport.ini input.ini; do
-    if [[ -f "$PORT_SRC/$settings" ]]; then
-        cp "$PORT_SRC/$settings" "$APP/Contents/Resources/port/"
-    elif [[ -f "$ROOT/defaults/$settings" ]]; then
-        cp "$ROOT/defaults/$settings" "$APP/Contents/Resources/port/"
-    fi
-done
-rsync -a --exclude 'NVIDIA-DLSS-LICENSE.txt' "$PORT_SRC/licenses/" "$APP/Contents/Resources/port/licenses/"
-printf '%s\n' "${PORT_VERSION:-0.3.6}" > "$APP/Contents/Resources/port/PORT_VERSION"
-mkdir -p "$APP/Contents/Resources/covers"
-if [[ -d "$PORT_SRC/_internal/covers" ]]; then
-    cp "$PORT_SRC/_internal/covers/u1.jpg" "$PORT_SRC/_internal/covers/u2.jpg" \
-        "$PORT_SRC/_internal/covers/u3.jpg" "$APP/Contents/Resources/covers/"
-fi
-
-cp "$ROOT/launch.py" "$ROOT/patch_probe.py" "$ROOT/tls_adapter.c" \
-    "$ROOT/uncharted-crossover-tls.dll" "$ROOT/NOTICES.txt" \
-    "$APP/Contents/Resources/engine/"
-cp "$ROOT/NOTICES.txt" "$APP/Contents/Resources/NOTICES.txt"
 
 PYTHON_DIR="$ROOT/dist/python-standalone"
 if [[ ! -x "$PYTHON_DIR/bin/python3" ]]; then
@@ -63,9 +37,9 @@ fi
 mkdir -p "$APP/Contents/Resources/python"
 rsync -a "$PYTHON_DIR/" "$APP/Contents/Resources/python/"
 
-swiftc -parse-as-library -O -o "$APP/Contents/MacOS/Uncharted" \
+swiftc -parse-as-library -O -o "$APP/Contents/MacOS/NathanDrakeCollection" \
     -framework SwiftUI -framework AppKit \
-    "$ROOT/macos/UnchartedApp.swift" \
+    "$ROOT/macos/NathanDrakeCollectionApp.swift" \
     "$ROOT/macos/AppUpdate.swift"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
@@ -76,15 +50,17 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>Uncharted</string>
+    <string>NathanDrakeCollection</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.uncharted.macos</string>
+    <string>com.macgametest.nathandrakecollection</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleDisplayName</key>
     <string>Nathan Drake Collection</string>
     <key>CFBundleName</key>
-    <string>Nathan Drake Collection</string>
+    <string>NathanDrakeCollection</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -92,7 +68,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.6</string>
+    <string>26.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSDesktopFolderUsageDescription</key>
