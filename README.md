@@ -28,13 +28,12 @@ Recommended first settings: Medium (1080p, 60 FPS) in **Game Settings**. The in-
 
 Saves, settings, and logs stay in `~/Library/Application Support/NathanDrakeCollection`. Replacing the app preserves that folder.
 
-Do not disable Gatekeeper globally.
 
-## Credits
+## Credits & Licenses
 
-- **PC port:** [BilalReloaded](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port)
+- **PC port:** [BilalReloaded](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port) (GPLv2)
 - **KosmicKrisp:** Mesa Vulkan on Metal (MIT)
-- **SpartanPort:** [God of War III Remastered Mac launcher](https://github.com/FelipePrado0/SpartanPort) — the Apple Silicon, KosmicKrisp, and packaging model for this app (Fleurat, nizwar, Incognito-Coder)
-- **This launcher:** MacGameTest
+- **SpartanPort:** [God of War III Remastered Mac launcher](https://github.com/FelipePrado0/SpartanPort) (GPLv2) — the Apple Silicon, KosmicKrisp, and packaging model for this app (Fleurat, nizwar, Incognito-Coder)
+- **This launcher:** [MacGameTest](https://www.youtube.com/@MacGameTest)
 
-See `NOTICES.txt` and Credits & Licenses in the app.
+See `NOTICES.txt` and Credits & Licenses in the app.pp.
