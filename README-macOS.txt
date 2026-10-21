@@ -27,3 +27,10 @@ Replacing the application preserves that folder.
 This build is signed with Developer ID and notarized by Apple. A double-click
 opens it. If macOS still refuses, open System Settings, Privacy & Security,
 and choose Open Anyway. Do not disable Gatekeeper globally.
+
+Credits & Licenses
+  PC port: BilalReloaded (GPLv2)
+  KosmicKrisp: Mesa Vulkan on Metal (MIT)
+  SpartanPort: God of War III Remastered Mac launcher (GPLv2)
+  This launcher: MacGameTest  https://www.youtube.com/@MacGameTest
+  Full notices are in NOTICES.txt and Credits & Licenses in the app.

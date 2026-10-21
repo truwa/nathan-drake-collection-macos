@@ -711,6 +711,7 @@ private let creditBlocks: [CreditBlock] = [
     ]),
     CreditBlock(heading: "PC port", lines: [
         CreditEntry(text: "BilalReloaded", url: URL(string: "https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port")),
+        CreditEntry(text: "GPLv2"),
     ]),
     CreditBlock(heading: "KosmicKrisp", lines: [
         CreditEntry(text: "Mesa Vulkan on Metal"),
@@ -720,6 +721,7 @@ private let creditBlocks: [CreditBlock] = [
     CreditBlock(heading: "SpartanPort macOS launcher", lines: [
         CreditEntry(text: "God of War III Remastered Mac launcher"),
         CreditEntry(text: "SpartanPort", url: URL(string: "https://github.com/FelipePrado0/SpartanPort")),
+        CreditEntry(text: "GPLv2"),
         CreditEntry(text: "Apple Silicon, KosmicKrisp and packaging work used as the Mac launcher model"),
         CreditEntry(text: "Fleurat, nizwar, Incognito-Coder"),
     ]),

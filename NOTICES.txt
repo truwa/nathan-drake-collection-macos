@@ -9,6 +9,7 @@ u2data, u3data) and, if you dumped it separately, the 1.02 update folder.
 
 PC port
   BilalReloaded
+  GPLv2
   https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port
 
 KosmicKrisp
@@ -17,6 +18,7 @@ KosmicKrisp
 
 SpartanPort macOS launcher
   God of War III Remastered Mac launcher (SpartanPort)
+  GPLv2
   https://github.com/FelipePrado0/SpartanPort
   Apple Silicon, KosmicKrisp and packaging work used as the Mac launcher model
   Fleurat, nizwar, Incognito-Coder
