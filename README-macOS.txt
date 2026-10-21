@@ -21,6 +21,6 @@ Saves, settings and logs stay outside the application:
   ~/Library/Application Support/NathanDrakeCollection
 Replacing the application preserves that folder.
 
-If macOS blocks an ad-hoc build:
-  xattr -dr com.apple.quarantine /Applications/NathanDrakeCollection.app
-Do not disable Gatekeeper globally.
+This build is signed with Developer ID and notarized by Apple. A double-click
+opens it. If macOS still refuses, open System Settings, Privacy & Security,
+and choose Open Anyway. Do not disable Gatekeeper globally.

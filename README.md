@@ -4,6 +4,15 @@ Experimental Apple Silicon launcher for [BilalReloaded](https://github.com/bc160
 
 **This repository does not contain game files.** You need your own decrypted PS4 dump. The launcher is not affiliated with Sony, Naughty Dog, or Bluepoint.
 
+## Install and run
+
+1. Download the zip from the [latest release](https://github.com/truwa/nathan-drake-collection-macos/releases/latest) and unzip it.
+2. Open `NathanDrakeCollection.app`. The release is notarized by Apple and signed with Developer ID, so a double-click opens it.
+3. If macOS still refuses, open System Settings, go to Privacy & Security, and allow the app there. The button usually says Open Anyway.
+4. Choose the game folder (`eboot.bin` and `sce_sys`).
+5. If update 1.02 was dumped separately, choose that folder too. A sibling folder named like the game plus `-patch` or `-update` is detected automatically. Dumps are not copied or merged on disk.
+6. Pick a game and press Play.
+
 ## Requirements
 
 - Apple Silicon (M1 or newer)
@@ -14,22 +23,9 @@ Experimental Apple Silicon launcher for [BilalReloaded](https://github.com/bc160
 
 Intel Macs are not supported. Python and Homebrew are not required to run the packaged app.
 
-## Use
-
-1. Open `NathanDrakeCollection.app`.
-2. Choose the game folder (`eboot.bin` and `sce_sys`).
-3. If update 1.02 was dumped separately, choose that folder too. A sibling folder named like the game plus `-patch` or `-update` is detected automatically. Dumps are not copied or merged on disk.
-4. Pick a game and press Play.
-
 Recommended first settings: Medium (1080p, 60 FPS) in **Game Settings**. The in-game menu is Insert or R3+L2.
 
 Saves, settings, and logs stay in `~/Library/Application Support/NathanDrakeCollection`. Replacing the app preserves that folder.
-
-If macOS quarantines a download:
-
-```
-xattr -dr com.apple.quarantine /Applications/NathanDrakeCollection.app
-```
 
 Do not disable Gatekeeper globally.
 

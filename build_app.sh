@@ -42,7 +42,9 @@ swiftc -parse-as-library -O -o "$APP/Contents/MacOS/NathanDrakeCollection" \
     "$ROOT/macos/NathanDrakeCollectionApp.swift" \
     "$ROOT/macos/AppUpdate.swift"
 
-cat > "$APP/Contents/Info.plist" <<'EOF'
+VERSION="${VERSION:-1.0.1}"
+BUILD="${BUILD:-$VERSION}"
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -64,9 +66,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${BUILD}</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>NSHighResolutionCapable</key>
@@ -83,17 +85,48 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Mehmet Akif Ozdas (2DG34W64L7)}"
-if security find-identity -v -p codesigning | grep -F "$IDENTITY" >/dev/null; then
-    codesign --force --deep --options runtime \
-        --entitlements "$ROOT/macos/entitlements.plist" \
-        --sign "$IDENTITY" \
-        "$APP"
-    codesign --verify --deep --strict --verbose=2 "$APP"
-    echo "Signed with $IDENTITY"
-else
-    echo "No Developer ID identity named '$IDENTITY'; app is unsigned." >&2
+SIGN_ID="${SIGN_ID:-${CODESIGN_IDENTITY:-Developer ID Application: Mehmet Akif Ozdas (2DG34W64L7)}}"
+ENTITLEMENTS="$ROOT/macos/entitlements.plist"
+if ! security find-identity -v -p codesigning | grep -F "$SIGN_ID" >/dev/null; then
+    if [[ "${REQUIRE_SIGN:-}" == "1" ]]; then
+        echo "Developer ID certificate not found: $SIGN_ID" >&2
+        exit 1
+    fi
+    echo "Built $APP (unsigned; certificate not found)"
+    du -sh "$APP"
+    exit 0
 fi
+python3 - "$APP" "$SIGN_ID" "$ENTITLEMENTS" <<'PY'
+import os, subprocess, sys
+root, identity, entitlements = sys.argv[1:]
+main = os.path.join(root, "Contents/MacOS/NathanDrakeCollection")
+found = []
+for dirpath, _, names in os.walk(root):
+    for name in names:
+        path = os.path.join(dirpath, name)
+        if os.path.islink(path) or os.path.realpath(path) == os.path.realpath(main):
+            continue
+        kind = subprocess.run(["file", "-b", path], capture_output=True, text=True).stdout
+        if "Mach-O" in kind:
+            found.append((path.count(os.sep), path, kind))
+found.sort(reverse=True)
+for _, path, kind in found:
+    command = [
+        "codesign", "--force", "--sign", identity,
+        "--options", "runtime", "--timestamp",
+    ]
+    if "executable" in kind and "shared library" not in kind and "bundle" not in kind:
+        command.extend(["--entitlements", entitlements])
+    command.append(path)
+    subprocess.check_call(command)
+subprocess.check_call([
+    "codesign", "--force", "--sign", identity,
+    "--options", "runtime", "--timestamp",
+    "--entitlements", entitlements, root,
+])
+PY
+codesign --verify --deep --strict --verbose=2 "$APP"
+echo "Signed with $SIGN_ID"
 
 echo "Built $APP"
 du -sh "$APP"
