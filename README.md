@@ -32,7 +32,7 @@ Do not disable Gatekeeper globally.
 
 ## Credits
 
-- **PC port:** [BilalReloaded](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port), from [SuperMedo’s Bloodborne / Uncharted work](https://github.com/Supermedo/uncharted_pc)
+- **PC port:** [BilalReloaded](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port)
 - **KosmicKrisp:** Mesa Vulkan on Metal (MIT)
 - **SpartanPort:** [God of War III Remastered Mac launcher](https://github.com/FelipePrado0/SpartanPort) — the Apple Silicon, KosmicKrisp, and packaging model for this app (Fleurat, nizwar, Incognito-Coder)
 - **This launcher:** MacGameTest

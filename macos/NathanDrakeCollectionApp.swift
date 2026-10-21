@@ -707,8 +707,6 @@ private let creditBlocks: [CreditBlock] = [
     ]),
     CreditBlock(heading: "PC port", lines: [
         CreditEntry(text: "BilalReloaded", url: URL(string: "https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port")),
-        CreditEntry(text: "Original Bloodborne / Uncharted lineage by SuperMedo",
-                    url: URL(string: "https://github.com/Supermedo/uncharted_pc")),
     ]),
     CreditBlock(heading: "KosmicKrisp", lines: [
         CreditEntry(text: "Mesa Vulkan on Metal"),
