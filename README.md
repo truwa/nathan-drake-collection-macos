@@ -6,8 +6,8 @@ Experimental Apple Silicon launcher for [BilalReloaded](https://github.com/bc160
 
 ## Install and run
 
-1. Download the zip from the [latest release](https://github.com/truwa/nathan-drake-collection-macos/releases/latest) and unzip it.
-2. Open `NathanDrakeCollection.app`. The release is notarized by Apple and signed with Developer ID, so a double-click opens it.
+1. Download the `.dmg` from the [latest release](https://github.com/truwa/nathan-drake-collection-macos/releases/latest) and open it.
+2. Drag `NathanDrakeCollection.app` onto Applications, then open it from Applications. The release is notarized by Apple and signed with Developer ID, so a double-click opens it.
 3. If macOS still refuses, open System Settings, go to Privacy & Security, and allow the app there. The button usually says Open Anyway.
 4. Choose the game folder (`eboot.bin` and `sce_sys`).
 5. If update 1.02 was dumped separately, choose that folder too. A sibling folder named like the game plus `-patch` or `-update` is detected automatically. Dumps are not copied or merged on disk.

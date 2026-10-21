@@ -1,6 +1,6 @@
 #!/bin/bash
-# Build, sign, notarize, staple, zip, and publish one GitHub release.
-# Usage: ./release.sh 1.0.1 [notes.txt]
+# Build, sign, notarize, staple, make a drag-to-Applications disk image, and publish.
+# Usage: ./release.sh 1.1.1 [notes.txt]
 # The Apple ID password stays in the Keychain profile. It is not read from this file.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -33,22 +33,16 @@ EOF
     echo "$history_err" >&2
 fi
 
-export VERSION BUILD="$VERSION" REQUIRE_SIGN=1 SIGN_ID
-"$ROOT/build_app.sh"
-
-APP="$ROOT/dist/NathanDrakeCollection.app"
-NOTARY_ZIP="$ROOT/dist/NathanDrakeCollection-${VERSION}.notarize.zip"
-FINAL_ZIP="$ROOT/dist/NathanDrakeCollection-macos.zip"
-rm -f "$NOTARY_ZIP" "$FINAL_ZIP"
-ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
-
-echo "Submitting for notarization…"
-SUBMIT_JSON="$(mktemp)"
-set +e
-xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$PROFILE" --wait --output-format json >"$SUBMIT_JSON"
-submit_status=$?
-set -e
-if ! python3 - "$SUBMIT_JSON" "$PROFILE" "$submit_status" <<'PY'
+submit_notary() {
+    local file="$1"
+    echo "Submitting $(basename "$file") for notarization…"
+    local json
+    json="$(mktemp)"
+    set +e
+    xcrun notarytool submit "$file" --keychain-profile "$PROFILE" --wait --output-format json >"$json"
+    local status=$?
+    set -e
+    if ! python3 - "$json" "$PROFILE" "$status" <<'PY'
 import json, subprocess, sys
 path, profile, submit_status = sys.argv[1:]
 raw = open(path, encoding="utf-8").read().strip()
@@ -73,28 +67,47 @@ if submission:
     subprocess.run(["xcrun", "notarytool", "log", submission, "--keychain-profile", profile], check=False)
 sys.exit(1)
 PY
-then
-    rm -f "$SUBMIT_JSON"
-    exit 1
-fi
-rm -f "$NOTARY_ZIP" "$SUBMIT_JSON"
+    then
+        rm -f "$json"
+        exit 1
+    fi
+    rm -f "$json"
+}
+
+export VERSION BUILD="$VERSION" REQUIRE_SIGN=1 SIGN_ID
+"$ROOT/build_app.sh"
+
+APP="$ROOT/dist/NathanDrakeCollection.app"
+NOTARY_ZIP="$ROOT/dist/NathanDrakeCollection-${VERSION}.notarize.zip"
+FINAL_ZIP="$ROOT/dist/NathanDrakeCollection-macos.zip"
+FINAL_DMG="$ROOT/dist/NathanDrakeCollection-macos.dmg"
+rm -f "$NOTARY_ZIP" "$FINAL_ZIP" "$FINAL_DMG"
+ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
+submit_notary "$NOTARY_ZIP"
+rm -f "$NOTARY_ZIP"
 
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=4 "$APP"
 ditto -c -k --keepParent "$APP" "$FINAL_ZIP"
 
+chmod +x "$ROOT/macos/make_dmg.sh"
+"$ROOT/macos/make_dmg.sh" "$APP" "$ROOT/README-macOS.txt" "$FINAL_DMG"
+submit_notary "$FINAL_DMG"
+xcrun stapler staple "$FINAL_DMG"
+xcrun stapler validate "$FINAL_DMG"
+
 if [[ -n "$NOTES_FILE" ]]; then
-    gh release create "v$VERSION" "$FINAL_ZIP" \
+    gh release create "v$VERSION" "$FINAL_DMG" "$FINAL_ZIP" \
         --repo truwa/nathan-drake-collection-macos \
         --title "Nathan Drake Collection $VERSION" \
         --notes-file "$NOTES_FILE"
 else
-    gh release create "v$VERSION" "$FINAL_ZIP" \
+    gh release create "v$VERSION" "$FINAL_DMG" "$FINAL_ZIP" \
         --repo truwa/nathan-drake-collection-macos \
         --title "Nathan Drake Collection $VERSION" \
         --notes "$(cat <<EOF
-Download NathanDrakeCollection-macos.zip, unzip it, and open NathanDrakeCollection.app.
+Download NathanDrakeCollection-macos.dmg, open it, and drag NathanDrakeCollection.app onto Applications.
 
 This release is signed with Developer ID and notarized by Apple. A double-click opens it.
 
@@ -102,4 +115,4 @@ The games are not included. You need your own decrypted PS4 dump. The BilalReloa
 EOF
 )"
 fi
-echo "Published $FINAL_ZIP as release v$VERSION"
+echo "Published $FINAL_DMG as release v$VERSION"
