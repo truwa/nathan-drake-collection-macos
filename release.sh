@@ -98,7 +98,7 @@ Download NathanDrakeCollection-macos.zip, unzip it, and open NathanDrakeCollecti
 
 This release is signed with Developer ID and notarized by Apple. A double-click opens it.
 
-The games are not included. You need your own decrypted PS4 dump and a local BilalReloaded native probe.
+The games are not included. You need your own decrypted PS4 dump. The BilalReloaded engine is already inside the app.
 EOF
 )"
 fi

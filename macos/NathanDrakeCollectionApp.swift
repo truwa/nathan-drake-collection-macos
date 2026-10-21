@@ -189,7 +189,7 @@ final class LauncherModel: ObservableObject {
             return
         }
         guard nativeReady else {
-            alert("The native runtime is missing.", "This app needs the BilalReloaded probe. Rebuild NathanDrakeCollection.app.")
+            alert("The native runtime is missing.", "Download the latest Nathan Drake Collection release. The game engine is included in the app.")
             return
         }
         guard dumpURL != nil else {
@@ -423,7 +423,7 @@ final class LauncherModel: ObservableObject {
             self?.nativeReady = line.hasPrefix("native\t") && line.count > "native\t".count
         } onExit: { [weak self] _ in
             guard let self, !self.nativeReady else { return }
-            self.status = "The native BilalReloaded runtime was not found."
+            self.status = "This app is missing its bundled game engine. Download the latest release."
         }
     }
 

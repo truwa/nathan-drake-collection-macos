@@ -6,6 +6,7 @@ packaged app.
 
 This download contains no game files. You need your own decrypted PS4 dump of
 Uncharted: The Nathan Drake Collection (CUSA02344, CUSA02320, or CUSA02343).
+The BilalReloaded engine is already inside this app.
 
 1. Open NathanDrakeCollection.app.
 2. Choose the game folder (eboot.bin and sce_sys).

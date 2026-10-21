@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import struct
 import subprocess
@@ -46,6 +47,10 @@ ASPECT_WIDTHS = {"16:10": 16 / 10, "16:9": 16 / 9, "21:9": 64 / 27, "32:9": 32 /
 UPDATE_SUFFIXES = ("-patch", "-update", "_patch", "_update")
 
 
+def is_native(path: Path) -> bool:
+    return (path / "gow3_pc/out/gow3-probe").is_file() and (path / "tools/probe_uncharted.py").is_file()
+
+
 def native_root() -> Path | None:
     env = os.environ.get("UNCHARTED_NATIVE", "").strip()
     candidates = []
@@ -53,13 +58,6 @@ def native_root() -> Path | None:
         candidates.append(Path(env).expanduser())
     if ROOT.name == "engine":
         candidates.append(ROOT.parent / "native")
-        stamp = ROOT.parent / "native-root.txt"
-        try:
-            text = stamp.read_text(encoding="utf-8").strip()
-        except OSError:
-            text = ""
-        if text:
-            candidates.append(Path(text))
     here = ROOT
     for _ in range(8):
         candidates.append(here / "native")
@@ -74,9 +72,34 @@ def native_root() -> Path | None:
         if path in seen:
             continue
         seen.add(path)
-        if (path / "gow3_pc/out/gow3-probe").is_file() and (path / "tools/probe_uncharted.py").is_file():
+        if is_native(path):
             return path
     return None
+
+
+def play_root() -> Path:
+    """Writable copy of the bundled runtime so boot files do not break the app signature."""
+    source = native_root()
+    if source is None:
+        raise FileNotFoundError("The native BilalReloaded runtime is not installed in this app.")
+    stamp_file = source / ".bundle-stamp"
+    try:
+        stamp = stamp_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        stamp = str(source)
+    dest = SUPPORT / "runtime"
+    marker = dest / ".bundle-stamp"
+    if is_native(dest):
+        try:
+            if marker.read_text(encoding="utf-8").strip() == stamp:
+                return dest
+        except OSError:
+            pass
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(source, dest, symlinks=True, ignore=shutil.ignore_patterns("analysis", "*.dSYM", "*.log"))
+    marker.write_text(stamp + "\n", encoding="utf-8")
+    return dest
 
 
 def sfo_value(folder: Path, key: str) -> str | None:
@@ -290,9 +313,7 @@ def write_ini(game: str, updates: dict[str, str]) -> Path:
 
 
 def launch(dump: Path, update: Path | None, exe: str, settings: dict) -> int:
-    native = native_root()
-    if native is None:
-        raise FileNotFoundError("The native BilalReloaded runtime is not installed in this app.")
+    native = play_root()
     dump = resolve_dump(dump)
     _title, filename = GAME_TABLE[exe]
     if not (dump / "eboot.bin").is_file():

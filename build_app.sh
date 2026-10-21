@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/dist/NathanDrakeCollection.app"
 NATIVE_SRC="${NATIVE_SRC:-$(cd "$ROOT/../uncharted-bilal-work/bilal" && pwd)}"
+VERSION="${VERSION:-1.1.0}"
+BUILD="${BUILD:-$VERSION}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" \
@@ -16,12 +18,28 @@ cp "$ROOT/macos/covers/u1.jpg" "$ROOT/macos/covers/u2.jpg" "$ROOT/macos/covers/u
 cp "$ROOT/launch.py" "$ROOT/NOTICES.txt" "$APP/Contents/Resources/engine/"
 cp "$ROOT/NOTICES.txt" "$ROOT/README-macOS.txt" "$APP/Contents/Resources/"
 
-if [[ -x "$NATIVE_SRC/gow3_pc/out/gow3-probe" && -f "$NATIVE_SRC/tools/probe_uncharted.py" ]]; then
-    mkdir -p "$APP/Contents/Resources/native/gow3_pc/out" "$APP/Contents/Resources/native/tools"
-    # Local builds keep the probe in the Bilal checkout so rpaths and KosmicKrisp
-    # stay valid. The app records that path for Play.
-    printf '%s\n' "$NATIVE_SRC" > "$APP/Contents/Resources/native-root.txt"
+NATIVE_OUT="$APP/Contents/Resources/native/gow3_pc/out"
+DEPS="${SPARTAN_MACOS_DEPS:-$HOME/Library/Caches/spartanport-macos-deps}"
+if [[ ! -x "$NATIVE_SRC/gow3_pc/out/gow3-probe" || ! -f "$NATIVE_SRC/tools/probe_uncharted.py" ]]; then
+    echo "Native probe missing at $NATIVE_SRC (build gow3-probe first)." >&2
+    exit 1
 fi
+if [[ ! -f "$DEPS/lib/libvulkan_kosmickrisp.dylib" ]]; then
+    echo "KosmicKrisp missing at $DEPS. Build SpartanPort macOS deps first." >&2
+    exit 1
+fi
+mkdir -p "$NATIVE_OUT/gpu" "$NATIVE_OUT/vulkan" \
+    "$APP/Contents/Resources/native/gow3_pc/scripts" \
+    "$APP/Contents/Resources/native/tools"
+strip -S -o "$NATIVE_OUT/gow3-probe" "$NATIVE_SRC/gow3_pc/out/gow3-probe"
+chmod +x "$NATIVE_OUT/gow3-probe"
+strip -S -o "$NATIVE_OUT/gpu/libgow3gpu.dylib" "$NATIVE_SRC/gow3_pc/out/gpu/libgow3gpu.dylib"
+cp "$DEPS/lib/libvulkan_kosmickrisp.dylib" "$NATIVE_OUT/vulkan/"
+cp "$NATIVE_SRC/tools/probe_uncharted.py" "$APP/Contents/Resources/native/tools/"
+cp "$NATIVE_SRC/gow3_pc/scripts/"*.py "$APP/Contents/Resources/native/gow3_pc/scripts/"
+printf 'bundled\n' > "$APP/Contents/Resources/native/VERSION"
+printf '%s\n' "$VERSION" > "$APP/Contents/Resources/native/.bundle-stamp"
+python3 "$ROOT/macos/bundle_native.py" "$NATIVE_OUT" "$DEPS"
 
 PYTHON_DIR="$ROOT/dist/python-standalone"
 if [[ ! -x "$PYTHON_DIR/bin/python3" ]]; then
@@ -42,8 +60,6 @@ swiftc -parse-as-library -O -o "$APP/Contents/MacOS/NathanDrakeCollection" \
     "$ROOT/macos/NathanDrakeCollectionApp.swift" \
     "$ROOT/macos/AppUpdate.swift"
 
-VERSION="${VERSION:-1.0.1}"
-BUILD="${BUILD:-$VERSION}"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

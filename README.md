@@ -19,7 +19,8 @@ Experimental Apple Silicon launcher for [BilalReloaded](https://github.com/bc160
 - macOS 26 or newer
 - Rosetta 2
 - A decrypted dump of CUSA02344, CUSA02320, or CUSA02343 (`eboot.bin`, `sce_sys`, `u1data` / `u2data` / `u3data`)
-- A local [BilalReloaded](https://github.com/bc160201983) native probe (`gow3-probe`) plus KosmicKrisp. Point the app at it with `UNCHARTED_NATIVE`, or keep a `native-root.txt` next to the app resources.
+
+The BilalReloaded native engine and KosmicKrisp are inside the app. You do not download that port separately.
 
 Intel Macs are not supported. Python and Homebrew are not required to run the packaged app.
 
