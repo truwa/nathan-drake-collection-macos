@@ -1,6 +1,6 @@
 # Nathan Drake Collection for Mac
 
-Experimental Apple Silicon launcher for [BilalReloaded](https://github.com/bc160201983)’s PC port of *Uncharted: The Nathan Drake Collection*.
+Experimental Apple Silicon launcher for [BilalReloaded’s PC port](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port) of *Uncharted: The Nathan Drake Collection*.
 
 **This repository does not contain game files.** You need your own decrypted PS4 dump. The launcher is not affiliated with Sony, Naughty Dog, or Bluepoint.
 
@@ -32,9 +32,9 @@ Do not disable Gatekeeper globally.
 
 ## Credits
 
-- **PC port:** BilalReloaded, from SuperMedo’s Bloodborne / Uncharted work
+- **PC port:** [BilalReloaded](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port), from [SuperMedo’s Bloodborne / Uncharted work](https://github.com/Supermedo/uncharted_pc)
 - **KosmicKrisp:** Mesa Vulkan on Metal (MIT)
-- **SpartanPort:** God of War III Remastered Mac launcher — the Apple Silicon, KosmicKrisp, and packaging model for this app ([SpartanPort](https://github.com/FelipePrado0/SpartanPort); Fleurat, nizwar, Incognito-Coder)
+- **SpartanPort:** [God of War III Remastered Mac launcher](https://github.com/FelipePrado0/SpartanPort) — the Apple Silicon, KosmicKrisp, and packaging model for this app (Fleurat, nizwar, Incognito-Coder)
 - **This launcher:** MacGameTest
 
 See `NOTICES.txt` and Credits & Licenses in the app.

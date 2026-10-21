@@ -9,7 +9,7 @@ u2data, u3data) and, if you dumped it separately, the 1.02 update folder.
 
 PC port
   BilalReloaded
-  https://github.com/bc160201983
+  https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port
   Lineage from SuperMedo's Bloodborne / Uncharted work
   https://github.com/Supermedo/uncharted_pc
 

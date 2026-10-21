@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/dist/NathanDrakeCollection.app"
 NATIVE_SRC="${NATIVE_SRC:-$(cd "$ROOT/../uncharted-bilal-work/bilal" && pwd)}"
-VERSION="${VERSION:-1.1.1}"
+VERSION="${VERSION:-1.1.2}"
 BUILD="${BUILD:-$VERSION}"
 
 rm -rf "$APP"
