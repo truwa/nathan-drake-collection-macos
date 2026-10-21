@@ -36,4 +36,4 @@ Saves, settings, and logs stay in `~/Library/Application Support/NathanDrakeColl
 - **SpartanPort:** [God of War III Remastered Mac launcher](https://github.com/FelipePrado0/SpartanPort) (GPLv2) — the Apple Silicon, KosmicKrisp, and packaging model for this app (Fleurat, nizwar, Incognito-Coder)
 - **This launcher:** [MacGameTest](https://www.youtube.com/@MacGameTest)
 
-See `NOTICES.txt` and Credits & Licenses in the app.pp.
+See `NOTICES.txt` and Credits & Licenses in the app.
