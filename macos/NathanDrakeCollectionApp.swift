@@ -1344,8 +1344,15 @@ private struct PortSettingsView: View {
     }
 }
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
+
 @main
 struct NathanDrakeCollectionApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = LauncherModel()
     @StateObject private var updates = AppUpdateModel()
 
