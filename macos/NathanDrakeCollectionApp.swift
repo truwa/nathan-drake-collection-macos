@@ -485,7 +485,10 @@ final class LauncherModel: ObservableObject {
     private func portEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         let bundled = resources.appendingPathComponent("native")
-        if FileManager.default.isExecutableFile(atPath: bundled.appendingPathComponent("gow3_pc/out/gow3-probe").path) {
+        let probe = bundled.appendingPathComponent("gow3_pc/out/gow3-probe")
+        let named = bundled.appendingPathComponent("gow3_pc/out/Uncharted")
+        if FileManager.default.isExecutableFile(atPath: named.path)
+            || FileManager.default.isExecutableFile(atPath: probe.path) {
             env["UNCHARTED_NATIVE"] = bundled.path
         }
         return env
@@ -623,7 +626,8 @@ final class LauncherModel: ObservableObject {
         let probe = apps.contains { app in
             let name = app.localizedName?.lowercased() ?? ""
             let bundle = app.bundleIdentifier?.lowercased() ?? ""
-            return name.contains("gow3-probe") || name.contains("uncharted") && !bundle.contains("nathandrakecollection")
+            return name.contains("gow3-probe") || name.contains("Uncharted")
+                || name.contains("uncharted") && !bundle.contains("nathandrakecollection")
         }
         if probe {
             sawGameWindow = true
@@ -890,7 +894,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                Text("Insert or R3 + L2 opens the port menu while in the game.")
+                Text("Insert or R3 + L2 opens the port menu. F10 frees the mouse; click the game to capture it again. Command-Tab switches apps.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Text(model.status)

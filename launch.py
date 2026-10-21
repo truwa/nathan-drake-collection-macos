@@ -48,7 +48,9 @@ UPDATE_SUFFIXES = ("-patch", "-update", "_patch", "_update")
 
 
 def is_native(path: Path) -> bool:
-    return (path / "gow3_pc/out/gow3-probe").is_file() and (path / "tools/probe_uncharted.py").is_file()
+    probe = path / "gow3_pc/out/gow3-probe"
+    named = path / "gow3_pc/out/Uncharted"
+    return (probe.is_file() or named.is_file()) and (path / "tools/probe_uncharted.py").is_file()
 
 
 def native_root() -> Path | None:
@@ -361,7 +363,10 @@ def launch(dump: Path, update: Path | None, exe: str, settings: dict) -> int:
         sys.executable, "-u", str(native / "tools/probe_uncharted.py"),
         "--boot", "--seconds", "0", "--game", str(dump), "--executable", filename,
     ]
-    print(f"Engine: native {native / 'gow3_pc/out/gow3-probe'}", flush=True)
+    engine = native / "gow3_pc/out/Uncharted"
+    if not engine.is_file():
+        engine = native / "gow3_pc/out/gow3-probe"
+    print(f"Engine: native {engine}", flush=True)
     print(f"Game: {dump} ({exe})", flush=True)
     if chosen:
         print(f"Update: {chosen}", flush=True)

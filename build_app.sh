@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/dist/NathanDrakeCollection.app"
 NATIVE_SRC="${NATIVE_SRC:-$(cd "$ROOT/../uncharted-bilal-work/bilal" && pwd)}"
-VERSION="${VERSION:-1.1.3}"
+VERSION="${VERSION:-1.1.4}"
 BUILD="${BUILD:-$VERSION}"
 
 rm -rf "$APP"
@@ -40,6 +40,8 @@ cp "$NATIVE_SRC/gow3_pc/scripts/"*.py "$APP/Contents/Resources/native/gow3_pc/sc
 printf 'bundled\n' > "$APP/Contents/Resources/native/VERSION"
 printf '%s\n' "$VERSION" > "$APP/Contents/Resources/native/.bundle-stamp"
 python3 "$ROOT/macos/bundle_native.py" "$NATIVE_OUT" "$DEPS"
+# Menu bar uses the launched executable name (Windows already copies this to Uncharted.exe).
+ln -f "$NATIVE_OUT/gow3-probe" "$NATIVE_OUT/Uncharted"
 
 PYTHON_DIR="$ROOT/dist/python-standalone"
 if [[ ! -x "$PYTHON_DIR/bin/python3" ]]; then
