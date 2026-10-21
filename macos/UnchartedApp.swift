@@ -39,6 +39,7 @@ final class LauncherModel: ObservableObject {
     @Published var portVersion = ""
     @Published var portUpdate: String?
     @Published var wineVersion = ""
+    @Published var nativeReady = false
     @Published var updating = false
     @Published var showCredits = false
 
@@ -59,6 +60,7 @@ final class LauncherModel: ObservableObject {
     func restore() {
         loadPortVersion()
         loadWineVersion()
+        detectNative()
         if let data = UserDefaults.standard.data(forKey: "dumpBookmark") {
             var stale = false
             if let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale) {
@@ -99,7 +101,7 @@ final class LauncherModel: ObservableObject {
 
     func play(_ game: GameRow, display: String, metalHud: Bool) {
         guard let dumpURL, game.available, !running else { return }
-        if !wineReady {
+        if !nativeReady && !wineReady {
             if wineInstalled {
                 beginWineSetup(force: false)
             } else {
@@ -573,7 +575,26 @@ final class LauncherModel: ObservableObject {
     }
 
     private var gameLogURL: URL {
-        SupportFolder.url.appendingPathComponent("prefix/drive_c/uncharted-out.txt")
+        if nativeReady {
+            return SupportFolder.url.appendingPathComponent("native-boot.log")
+        }
+        return SupportFolder.url.appendingPathComponent("prefix/drive_c/uncharted-out.txt")
+    }
+
+    private func detectNative() {
+        if FileManager.default.isExecutableFile(atPath: "/Users/truwa/Projects/uncharted-bilal-work/bilal/gow3_pc/out/gow3-probe") {
+            nativeReady = true
+        }
+        runPort(["--native-status"]) { [weak self] line in
+            guard let self else { return }
+            self.nativeReady = line.hasPrefix("native")
+            if self.nativeReady, self.dumpURL != nil, self.status == "Choose the folder that contains the game dump." {
+                self.refresh()
+            }
+        } onExit: { [weak self] _ in
+            guard let self, !self.nativeReady else { return }
+            self.prepareWine()
+        }
     }
 }
 
@@ -940,7 +961,6 @@ struct ContentView: View {
             optionsOpen = false
             applyAppearance()
             model.restore()
-            model.prepareWine()
         }
         .onChange(of: model.showCredits) { _, showing in
             if showing { NSApp.keyWindow?.makeFirstResponder(nil) }
@@ -965,6 +985,7 @@ struct ContentView: View {
     }
 
     private var wineLabel: String {
+        if model.nativeReady { return "Play starts the native Rosetta probe" }
         if model.wineVersion.isEmpty { return "Wine downloads on first launch" }
         return "Wine \(model.wineVersion)"
     }

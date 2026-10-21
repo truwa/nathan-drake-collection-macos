@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-"""Start the Uncharted Windows port with Wine and KosmicKrisp.
+"""Start the Uncharted collection.
 
-The dump stays where the user put it. Prepared images, saves, and the Wine
-prefix live under ~/Library/Application Support/Nathan Drake Collection. The
-first launch downloads the latest WineHQ macOS build from Gcenx and creates
-the prefix. A bundled engine is used when this file sits in the app. Otherwise
-the x86-64 KosmicKrisp cache under dist/upstream is used.
+On this Mac the launcher prefers the native x86-64 probe (Rosetta + KosmicKrisp)
+when that build is present. Otherwise it starts the Windows port under Wine.
+
+The dump stays where the user put it. Saves live under
+~/Library/Application Support/Nathan Drake Collection/user.
 """
 import argparse
 import json
@@ -722,7 +722,71 @@ def recorded_exit(prefix: Path, process_code: int) -> int:
     return process_code
 
 
+def native_root() -> Path | None:
+    """The Bilal native checkout, with gow3-probe already built."""
+    env = os.environ.get("UNCHARTED_NATIVE", "").strip()
+    candidates = []
+    if env:
+        candidates.append(Path(env).expanduser())
+    candidates.extend((
+        ROOT.parent / "uncharted-bilal-work/bilal",
+        ROOT / "native",
+        ROOT.parent / "native",
+        Path("/Users/truwa/Projects/uncharted-bilal-work/bilal"),
+    ))
+    for path in candidates:
+        if (path / "gow3_pc/out/gow3-probe").is_file() and (path / "tools/probe_uncharted.py").is_file():
+            return path.resolve()
+    return None
+
+
+def launch_native(dump: Path, exe: str, native: Path, fullscreen: bool, metal_hud: bool) -> int:
+    _title, filename = game_table()[exe]
+    if not (dump / "eboot.bin").is_file():
+        raise FileNotFoundError(f"No eboot.bin in {dump}")
+    if not (dump / filename).is_file():
+        raise FileNotFoundError(f"No {filename} in {dump}")
+    SUPPORT.mkdir(parents=True, exist_ok=True)
+    user = SUPPORT / "user"
+    user.mkdir(parents=True, exist_ok=True)
+    log = SUPPORT / "native-boot.log"
+    env = os.environ.copy()
+    env.setdefault("ROSETTA_ADVERTISE_AVX", "1")
+    env["UNCHARTED_USER_DIR"] = str(user)
+    env["GOW3_FULLSCREEN"] = "1" if fullscreen else "0"
+    if metal_hud:
+        env["MTL_HUD_ENABLED"] = "1"
+    icd = native / "gow3_pc/out/kosmickrisp_mesa_icd.json"
+    if icd.is_file():
+        env.setdefault("VK_DRIVER_FILES", str(icd))
+    command = [
+        sys.executable, "-u", str(native / "tools/probe_uncharted.py"),
+        "--boot", "--seconds", "0", "--game", str(dump), "--executable", filename,
+    ]
+    print(f"Engine: native {native / 'gow3_pc/out/gow3-probe'}", flush=True)
+    print(f"Game: {dump} ({exe})", flush=True)
+    print(f"Log: {log}", flush=True)
+    with log.open("wb") as output:
+        process = subprocess.Popen(command, cwd=str(native), env=env,
+                                   stdout=output, stderr=subprocess.STDOUT)
+
+        def stop(_signum, _frame):
+            process.terminate()
+            try:
+                process.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
+        return process.wait()
+
+
 def launch(dump: Path, exe: str, port_override: Path | None, fullscreen: bool, metal_hud: bool) -> int:
+    native = native_root()
+    if native is not None:
+        return launch_native(dump, exe, native, fullscreen, metal_hud)
     _title, filename = game_table()[exe]
     if not (dump / "eboot.bin").is_file():
         raise FileNotFoundError(f"No eboot.bin in {dump}")
@@ -805,6 +869,8 @@ def main() -> int:
                         help="Download the latest Wine again and keep the prefix")
     parser.add_argument("--kill-wine", action="store_true",
                         help="Stop the Wine processes for this launcher")
+    parser.add_argument("--native-status", action="store_true",
+                        help="Print whether the native Rosetta probe is available")
     parser.add_argument("--check-port", action="store_true",
                         help="Print the installed Windows port and the latest release")
     parser.add_argument("--download-port", action="store_true",
@@ -815,6 +881,10 @@ def main() -> int:
                         help="Version stamp to write when installing a zip")
     args = parser.parse_args()
     try:
+        if args.native_status:
+            native = native_root()
+            print(f"native\t{native}" if native else "wine")
+            return 0
         if args.kill_wine:
             kill_wine()
             return 0
