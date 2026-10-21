@@ -18,7 +18,8 @@ The BilalReloaded engine is already inside this app.
 Recommended first settings: Medium (1080p, 60 FPS). Graphics, upscaling, and
 the frame-rate cap are in Game Settings; the in-game menu is Insert or R3+L2.
 F10 frees the mouse so you can use the Mac pointer; click the game window to
-capture it again. Command-Tab switches apps.
+capture it again. Control-Command-F toggles fullscreen. Command-Tab switches
+apps.
 
 Saves, settings and logs stay outside the application:
   ~/Library/Application Support/NathanDrakeCollection

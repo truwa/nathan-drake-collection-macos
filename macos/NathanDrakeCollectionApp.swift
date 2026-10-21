@@ -874,29 +874,12 @@ struct ContentView: View {
                     .frame(width: 168, height: 44)
                     .controlSize(.large)
                 }
-                ForEach(model.games) { game in
-                    HStack(spacing: 12) {
-                        cover(game)
-                            .opacity(game.available ? 1 : 0.35)
-                        if !game.note.isEmpty {
-                            Text(game.note)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        PlayButton(
-                            stopping: model.runningGameID == game.id,
-                            disabled: updates.busy || (model.runningGameID != game.id && (!game.available || model.running || model.runtimeBlock != nil))
-                        ) {
-                            if model.runningGameID == game.id {
-                                model.stop()
-                            } else {
-                                model.play(game)
-                            }
-                        }
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(model.games) { game in
+                        gameCard(game)
                     }
                 }
-                Text("Insert or R3 + L2 opens the port menu. F10 frees the mouse; click the game to capture it again. Command-Tab switches apps.")
+                Text("Insert or R3 + L2 opens the port menu. F10 frees the mouse; click the game to capture it again. Control-Command-F toggles fullscreen. Command-Tab switches apps.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Text(model.status)
@@ -1070,48 +1053,72 @@ struct ContentView: View {
         }
     }
 
+    private func gameCard(_ game: GameRow) -> some View {
+        VStack(spacing: 8) {
+            cover(game)
+                .opacity(game.available ? 1 : 0.35)
+            PlayButton(
+                stopping: model.runningGameID == game.id,
+                disabled: updates.busy || (model.runningGameID != game.id && (!game.available || model.running || model.runtimeBlock != nil))
+            ) {
+                if model.runningGameID == game.id {
+                    model.stop()
+                } else {
+                    model.play(game)
+                }
+            }
+            if !game.note.isEmpty {
+                Text(game.note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func cover(_ game: GameRow) -> some View {
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("covers/\(game.id).jpg")
         let dumpIcon = model.dumpPath.map { URL(fileURLWithPath: $0).appendingPathComponent("sce_sys/icon0.png") }
         let image = bundled.flatMap { NSImage(contentsOf: $0) }
             ?? dumpIcon.flatMap { NSImage(contentsOf: $0) }
-        let parts = game.title.split(separator: ".", maxSplits: 1).map {
-            $0.trimmingCharacters(in: .whitespaces)
-        }
-        let number = parts.count > 1 ? parts[0] : ""
-        let name = parts.count > 1 ? parts[1] : game.title
-        return ZStack(alignment: .bottomLeading) {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Color(nsColor: .quaternaryLabelColor)
-            }
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.2), .black.opacity(0.88)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            VStack(alignment: .leading, spacing: 1) {
-                if !number.isEmpty {
-                    Text(number)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
+        return Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: 124)
+            .background {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Color(nsColor: .quaternaryLabelColor)
                 }
-                Text(name)
+            }
+            .clipped()
+            .overlay(alignment: .top) {
+                Text(game.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .shadow(color: .black.opacity(0.95), radius: 0, x: 0, y: 1)
+                    .shadow(color: .black.opacity(0.9), radius: 3)
+                    .shadow(color: .black, radius: 1.5)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(
+                            colors: [.black.opacity(0.88), .black.opacity(0.55), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
             }
-            .padding(8)
-            .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
-        }
-        .frame(width: 148, height: 158)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.18)))
-        .accessibilityLabel(game.title)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.18)))
+            .accessibilityLabel(game.title)
     }
 
     private var preferredScheme: ColorScheme {
@@ -1143,15 +1150,15 @@ private struct PlayButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: stopping ? "stop.fill" : "play.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                 Text(stopping ? "Stop" : "Play")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
             }
-            .frame(width: 132, height: 44)
+            .frame(width: 108, height: 32)
         }
-        .controlSize(.large)
+        .controlSize(.regular)
         .buttonStyle(.borderedProminent)
         .tint(stopping ? Color.red : Color.accentColor)
         .disabled(disabled)
