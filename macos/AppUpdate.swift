@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 private let bundleIdentifier = "com.macgametest.nathandrakecollection"
-private let releaseAPI = URL(string: "https://api.github.com/repos/truwa/uncharted-trilogy-macos/releases/latest")!
+private let releaseAPI = URL(string: "https://api.github.com/repos/truwa/nathan-drake-collection-macos/releases/latest")!
 
 private struct SemanticVersion: Comparable, Equatable {
     var major: Int

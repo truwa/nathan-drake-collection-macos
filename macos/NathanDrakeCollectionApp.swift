@@ -715,10 +715,16 @@ private let creditBlocks: [CreditBlock] = [
         CreditEntry(text: "MIT"),
         CreditEntry(text: "docs.mesa3d.org", url: URL(string: "https://docs.mesa3d.org/drivers/kosmickrisp.html")),
     ]),
+    CreditBlock(heading: "SpartanPort macOS launcher", lines: [
+        CreditEntry(text: "God of War III Remastered Mac launcher"),
+        CreditEntry(text: "SpartanPort", url: URL(string: "https://github.com/FelipePrado0/SpartanPort")),
+        CreditEntry(text: "Apple Silicon, KosmicKrisp and packaging work used as the Mac launcher model"),
+        CreditEntry(text: "Fleurat, nizwar, Incognito-Coder"),
+    ]),
     CreditBlock(heading: "This launcher", lines: [
         CreditEntry(text: "Version \(LauncherModel.appVersion)"),
         CreditEntry(text: "MacGameTest", url: URL(string: "https://www.youtube.com/@MacGameTest")),
-        CreditEntry(text: "github.com/truwa/uncharted-trilogy-macos", url: URL(string: "https://github.com/truwa/uncharted-trilogy-macos")),
+        CreditEntry(text: "github.com/truwa/nathan-drake-collection-macos", url: URL(string: "https://github.com/truwa/nathan-drake-collection-macos")),
     ]),
 ]
 
@@ -837,20 +843,32 @@ struct ContentView: View {
                 Text("The games are not included. Point this app at a dump you own.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                folderRow("Game folder", path: model.dumpPath, action: model.chooseDump)
-                HStack(alignment: .firstTextBaseline) {
-                    folderRow("Update folder (optional)", path: model.updatePath, action: model.chooseUpdate)
-                    if model.updatePath != nil {
-                        Button("Clear", action: model.clearUpdate)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        folderRow("Game folder", path: model.dumpPath, action: model.chooseDump)
+                        HStack(alignment: .firstTextBaseline) {
+                            folderRow("Update folder (optional)", path: model.updatePath, action: model.chooseUpdate)
+                            if model.updatePath != nil {
+                                Button("Clear", action: model.clearUpdate)
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if !model.gameVersion.isEmpty || !model.titleID.isEmpty {
+                            Text(([model.titleID.isEmpty ? nil : model.titleID,
+                                   model.gameVersion.isEmpty ? nil : "version \(model.gameVersion)"] as [String?])
+                                .compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
-                if !model.gameVersion.isEmpty || !model.titleID.isEmpty {
-                    Text([model.titleID, model.gameVersion.isEmpty ? nil : "version \(model.gameVersion)"]
-                        .compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Button("Game Settings") {
+                        openWindow(id: "game-settings")
+                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 168, height: 44)
+                    .controlSize(.large)
                 }
                 ForEach(model.games) { game in
                     HStack(spacing: 12) {
@@ -862,14 +880,16 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(model.runningGameID == game.id ? "Stop" : "Play") {
+                        PlayButton(
+                            stopping: model.runningGameID == game.id,
+                            disabled: updates.busy || (model.runningGameID != game.id && (!game.available || model.running || model.runtimeBlock != nil))
+                        ) {
                             if model.runningGameID == game.id {
                                 model.stop()
                             } else {
                                 model.play(game)
                             }
                         }
-                        .disabled(updates.busy || (model.runningGameID != game.id && (!game.available || model.running || model.runtimeBlock != nil)))
                     }
                 }
                 Text("Insert or R3 + L2 opens the port menu while in the game.")
@@ -952,7 +972,6 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Game Settings…") { openWindow(id: "game-settings") }
                     Button("Check for Updates") { updates.check() }
                         .disabled(model.running || updates.busy)
                     Button("Credits & Licenses") { model.showCredits = true }
@@ -1113,6 +1132,28 @@ struct ContentView: View {
     }
 }
 
+private struct PlayButton: View {
+    var stopping: Bool
+    var disabled: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: stopping ? "stop.fill" : "play.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(stopping ? "Stop" : "Play")
+                    .font(.system(size: 18, weight: .semibold))
+            }
+            .frame(width: 132, height: 44)
+        }
+        .controlSize(.large)
+        .buttonStyle(.borderedProminent)
+        .tint(stopping ? Color.red : Color.accentColor)
+        .disabled(disabled)
+    }
+}
+
 private struct PortSettingsView: View {
     @EnvironmentObject private var model: LauncherModel
 
@@ -1251,9 +1292,6 @@ private struct PortSettingsView: View {
                 .frame(maxWidth: 260)
             }
             Toggle("Unlock all chapters", isOn: $model.settings.unlock)
-            }
-            Section {
-                Button("Open Game Save Folder", action: model.openSaveFolder)
             }
         }
         .formStyle(.grouped)

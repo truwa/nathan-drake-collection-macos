@@ -17,6 +17,13 @@ KosmicKrisp
   MIT, part of Mesa
   https://docs.mesa3d.org/drivers/kosmickrisp.html
 
+SpartanPort macOS launcher
+  God of War III Remastered Mac launcher (SpartanPort)
+  https://github.com/FelipePrado0/SpartanPort
+  Apple Silicon, KosmicKrisp and packaging work used as the Mac launcher model
+  Fleurat, nizwar, Incognito-Coder
+
 This launcher
   MacGameTest
   https://www.youtube.com/@MacGameTest
+  https://github.com/truwa/nathan-drake-collection-macos

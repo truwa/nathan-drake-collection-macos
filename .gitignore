@@ -3,3 +3,6 @@
 *.tmp
 __pycache__/
 dist/
+.DS_Store
+macos/AppIcon.iconset/
+macos/AppIcon-source.jpg

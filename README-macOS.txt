@@ -15,7 +15,7 @@ Uncharted: The Nathan Drake Collection (CUSA02344, CUSA02320, or CUSA02343).
 4. Pick a game and press Play. First start prepares the game image.
 
 Recommended first settings: Medium (1080p, 60 FPS). Graphics, upscaling, and
-the frame-rate cap are in Options; the in-game menu is Insert or R3+L2.
+the frame-rate cap are in Game Settings; the in-game menu is Insert or R3+L2.
 
 Saves, settings and logs stay outside the application:
   ~/Library/Application Support/NathanDrakeCollection

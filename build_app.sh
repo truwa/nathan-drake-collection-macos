@@ -83,5 +83,17 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
+IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Mehmet Akif Ozdas (2DG34W64L7)}"
+if security find-identity -v -p codesigning | grep -F "$IDENTITY" >/dev/null; then
+    codesign --force --deep --options runtime \
+        --entitlements "$ROOT/macos/entitlements.plist" \
+        --sign "$IDENTITY" \
+        "$APP"
+    codesign --verify --deep --strict --verbose=2 "$APP"
+    echo "Signed with $IDENTITY"
+else
+    echo "No Developer ID identity named '$IDENTITY'; app is unsigned." >&2
+fi
+
 echo "Built $APP"
 du -sh "$APP"
