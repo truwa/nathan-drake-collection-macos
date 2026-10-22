@@ -484,6 +484,8 @@ final class LauncherModel: ObservableObject {
 
     private func portEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
+        // Keep CPython from writing __pycache__ into the signed bundle.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         let bundled = resources.appendingPathComponent("native")
         let probe = bundled.appendingPathComponent("gow3_pc/out/gow3-probe")
         let named = bundled.appendingPathComponent("gow3_pc/out/Uncharted")
