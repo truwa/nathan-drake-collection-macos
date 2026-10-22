@@ -57,7 +57,10 @@ fi
 mkdir -p "$APP/Contents/Resources/python"
 rsync -a "$PYTHON_DIR/" "$APP/Contents/Resources/python/"
 
-swiftc -parse-as-library -O -o "$APP/Contents/MacOS/NathanDrakeCollection" \
+# Pin the deployment target. swiftc otherwise stamps the host SDK (macOS 27)
+# into LC_BUILD_VERSION, and dyld on macOS 26 refuses to load the launcher.
+swiftc -parse-as-library -O -target arm64-apple-macosx26.0 \
+    -o "$APP/Contents/MacOS/NathanDrakeCollection" \
     -framework SwiftUI -framework AppKit \
     "$ROOT/macos/NathanDrakeCollectionApp.swift" \
     "$ROOT/macos/AppUpdate.swift"
