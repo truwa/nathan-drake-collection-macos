@@ -28,7 +28,6 @@ Recommended first settings: Medium (1080p, 60 FPS) in **Game Settings**. The in-
 
 Saves, settings, and logs stay in `~/Library/Application Support/NathanDrakeCollection`. Replacing the app preserves that folder.
 
-Do not disable Gatekeeper globally.
 
 ## Credits & Licenses
 
