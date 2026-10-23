@@ -2,7 +2,7 @@
 
 Experimental Apple Silicon launcher for [BilalReloaded’s PC port](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port) of *Uncharted: The Nathan Drake Collection*.
 
-**This repository does not contain game files.** You need your own decrypted PS4 dump. The launcher is not affiliated with Sony, Naughty Dog, or Bluepoint.
+**This repository does not contain game files.** You need your own decrypted PS4 game dump. The launcher is not affiliated with Sony, Naughty Dog, or Bluepoint.
 
 ## Install and run
 
