@@ -22,7 +22,7 @@ Experimental Apple Silicon launcher for [BilalReloaded’s PC port](https://gith
 
 The BilalReloaded native engine and KosmicKrisp are inside the app. You do not download that port separately.
 
-Intel Macs are not supported. Python and Homebrew are not required to run the packaged app.
+Intel Macs are not supported. 
 
 Recommended first settings: Medium (1080p, 60 FPS) in **Game Settings**. The in-game menu is Insert or R3+L2. **F10** frees the mouse; click the game window to capture it again. **Control-Command-F** toggles fullscreen. Command-Tab switches apps.
 
