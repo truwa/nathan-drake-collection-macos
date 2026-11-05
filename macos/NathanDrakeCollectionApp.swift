@@ -35,7 +35,12 @@ struct PortSettings: Codable, Equatable {
     var framesQueued = "1"
     var asyncShaders = true
     var multithreaded = false
-    var jobSleep = "on"
+    var jobSleep = "auto"
+    var anisotropy = "0"
+    var hiresShadows = false
+    var fullResTextures = false
+    var noDOF = false
+    var movieStretch = false
     var language = "1"
     var unlock = false
     var cheats: [String] = []
@@ -58,6 +63,11 @@ struct PortSettings: Codable, Equatable {
         case asyncShaders = "async_shaders"
         case multithreaded
         case jobSleep = "job_sleep"
+        case anisotropy
+        case hiresShadows = "hires_shadows"
+        case fullResTextures = "full_res_textures"
+        case noDOF = "no_dof"
+        case movieStretch = "movie_stretch"
         case language, unlock, cheats, appearance
         case showLog = "show_log"
         case metalHUD = "metal_hud"
@@ -85,7 +95,12 @@ struct PortSettings: Codable, Equatable {
         framesQueued = try box.decodeIfPresent(String.self, forKey: .framesQueued) ?? "1"
         asyncShaders = try box.decodeIfPresent(Bool.self, forKey: .asyncShaders) ?? true
         multithreaded = try box.decodeIfPresent(Bool.self, forKey: .multithreaded) ?? false
-        jobSleep = try box.decodeIfPresent(String.self, forKey: .jobSleep) ?? "on"
+        jobSleep = try box.decodeIfPresent(String.self, forKey: .jobSleep) ?? "auto"
+        anisotropy = try box.decodeIfPresent(String.self, forKey: .anisotropy) ?? "0"
+        hiresShadows = try box.decodeIfPresent(Bool.self, forKey: .hiresShadows) ?? false
+        fullResTextures = try box.decodeIfPresent(Bool.self, forKey: .fullResTextures) ?? false
+        noDOF = try box.decodeIfPresent(Bool.self, forKey: .noDOF) ?? false
+        movieStretch = try box.decodeIfPresent(Bool.self, forKey: .movieStretch) ?? false
         language = try box.decodeIfPresent(String.self, forKey: .language) ?? "1"
         unlock = try box.decodeIfPresent(Bool.self, forKey: .unlock) ?? false
         cheats = try box.decodeIfPresent([String].self, forKey: .cheats) ?? []
@@ -1039,7 +1054,7 @@ struct ContentView: View {
                         gameCard(game)
                     }
                 }
-                Text("Insert or R3 + L2 opens the port menu. F10 frees the mouse; click the game to capture it again. Control-Command-F toggles fullscreen. Command-Tab switches apps.")
+                Text("Insert or R3 + L2 opens the port menu. F10 frees the mouse; click the game to capture it again. Control-Command-F toggles fullscreen. Command-Tab switches apps. Hold Control-Shift-Q or L1 + R1 + Share + Options for 2 seconds to close the game.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Text(model.status)
@@ -1483,11 +1498,38 @@ private struct PortSettingsView: View {
             Toggle("Multithreaded rendering (experimental)", isOn: custom(settings.multithreaded))
             labeled("Idle game threads") {
                 Picker("Idle game threads", selection: custom(settings.jobSleep)) {
-                    Text("Sleep ★").tag("on")
+                    Text("Auto ★").tag("auto")
+                    Text("Sleep").tag("on")
                     Text("Spin").tag("off")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            }
+            }
+            Section("Enhancements") {
+            labeled("Texture filtering") {
+                Picker("Texture filtering", selection: settings.anisotropy) {
+                    Text("Game").tag("0")
+                    Text("4x").tag("4")
+                    Text("8x").tag("8")
+                    Text("16x ★").tag("16")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            if gameID != "u1" {
+                Toggle(isOn: settings.noDOF) {
+                    optionLabel("No depth of field", "Uncharted 2 and 3. No background blur while aiming, in cutscenes and in gameplay. Needs update 1.02.")
+                }
+                Toggle(isOn: settings.hiresShadows) {
+                    optionLabel("Sharper lamp shadows (experimental)", "Uncharted 2 and 3. Needs update 1.02.")
+                }
+                Toggle(isOn: settings.fullResTextures) {
+                    optionLabel("Full-resolution textures (experimental)", "Uncharted 2 and 3. No blurry textures while the game streams. Needs update 1.02.")
+                }
+            }
+            Toggle(isOn: settings.movieStretch) {
+                optionLabel("Stretch movies to the screen", "The 16:9 cutscene videos fill wider screens instead of showing black bars.")
             }
             }
             Section("Game") {
@@ -1540,6 +1582,15 @@ private struct PortSettingsView: View {
                 settings.wrappedValue.markCustom()
             }
         )
+    }
+
+    private func optionLabel(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func labeled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

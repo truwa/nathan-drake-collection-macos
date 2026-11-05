@@ -350,7 +350,12 @@ def launch(dump: Path, update: Path | None, exe: str, settings: dict) -> int:
     except OSError:
         env.pop("UNCHARTED_PORT_VERSION", None)
     env["UNCHARTED_DIAGNOSTICS"] = "0" if settings.get("log_level") == "errors" else "1"
-    env["UNCHARTED_JOB_SLEEP"] = "0" if settings.get("job_sleep") == "off" else "1"
+    env["UNCHARTED_JOB_SLEEP"] = {"off": "0", "on": "1"}.get(str(settings.get("job_sleep", "auto")), "auto")
+    anisotropy = str(settings.get("anisotropy", "0"))
+    env["UNCHARTED_ANISOTROPY"] = anisotropy if anisotropy in ("4", "8", "16") else "0"
+    for key in ("hires_shadows", "full_res_textures", "no_dof"):
+        env["UNCHARTED_" + key.upper()] = "1" if settings.get(key) in (True, 1, "1") else "0"
+    env["GOW3_MOVIE_STRETCH"] = "1" if settings.get("movie_stretch") in (True, 1, "1") else "0"
     env["UNCHARTED_LANGUAGE"] = str(settings.get("language", "1"))
     env["UNCHARTED_UNLOCK"] = "1" if settings.get("unlock") in (True, 1, "1") else "0"
     cheats = settings.get("cheats") or []
